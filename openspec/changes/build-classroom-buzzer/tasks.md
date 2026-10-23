@@ -12,8 +12,8 @@
 
 - [x] 2.1 建立版本化 SQL migration，包含 activities 的單調接收序號計數器，以及 groups、sessions、questions、submission_attempts、current_submissions、result_entries、export_records；`submission_attempts` 必須含 `session_id`、`server_received_at`、`receive_sequence`、`UNIQUE(activity_id, receive_sequence)` 與 `UNIQUE(session_id, question_id, idempotency_key)`，並在暫存資料庫測試唯一鍵／外鍵
 - [x] 2.2 初始化 SQLite foreign keys、WAL 與 busy timeout，並以整合測試驗證 foreign key 與唯一限制確實生效
-- [ ] 2.3 實作 activity、group、session 與 question repositories，並以 repository 測試驗證建立、查詢、更新及不存在資料的結果
-- [ ] 2.4 實作 `DRAFT -> OPEN -> CLOSED` 狀態檢查與 revision 遞增工具，並以單元測試驗證合法、跳級、反轉及重複 close 行為
+- [x] 2.3 實作 activity、group、session 與 question repositories，並以 repository 測試驗證建立、查詢、更新及不存在資料的結果
+- [x] 2.4 實作 `DRAFT -> OPEN -> CLOSED` 狀態檢查與 revision 遞增工具，並以單元測試驗證合法、跳級、反轉及重複 close 行為
 - [x] 2.5 實作測試用暫存 SQLite lifecycle，並驗證每個測試可獨立建立、migration 及清理而不使用開發資料庫
 
 ## 3. Guided Notes 動態匯入
