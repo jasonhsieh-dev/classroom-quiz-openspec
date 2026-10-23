@@ -1,0 +1,36 @@
+{
+  "name": "classroom-buzzer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm run dev --workspace @classroom-buzzer/server",
+    "dev:web": "npm run dev --workspace @classroom-buzzer/web",
+    "build": "npm run build --workspace @classroom-buzzer/shared && npm run build --workspace @classroom-buzzer/server && npm run build --workspace @classroom-buzzer/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "npm run start --workspace @classroom-buzzer/server"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.5",
+    "@vitest/coverage-v8": "^5.0.5",
+    "concurrently": "^10.0.6",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  },
+  "allowScripts": {
+    "better-sqlite3@13.0.3": false,
+    "esbuild@0.28.2": true
+  }
+}

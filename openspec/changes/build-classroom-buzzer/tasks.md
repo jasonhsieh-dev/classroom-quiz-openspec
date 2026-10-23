@@ -2,19 +2,19 @@
 
 ## 1. 專案骨架與共用契約
 
-- [ ] 1.1 建立 npm workspace、`apps/web`、`apps/server`、`packages/shared` 與根層 TypeScript 設定，並以安裝、型別檢查及空白建置指令驗證所有 workspace 可運作
-- [ ] 1.2 加入 React、Vite、Express、Socket.IO、SQLite、ExcelJS、Vitest、Supertest 與 Playwright 依賴，並驗證鎖定檔可在乾淨環境重現安裝
-- [ ] 1.3 在 shared package 定義活動狀態、角色、錯誤格式、HTTP DTO、Socket 事件與執行期驗證 schema，並以型別與 schema 單元測試驗證合法及錯誤 payload
-- [ ] 1.4 建立繁體中文錯誤處理 middleware、健康檢查端點及不洩漏 stack／絕對路徑的回應格式，並以 Supertest 驗證成功與例外回應
-- [ ] 1.5 建立 `var/data`、`var/uploads`、`var/exports` 的可配置路徑與啟動檢查，確認 `.gitignore` 明確忽略整個 `var/`，並以 `git check-ignore` 驗證執行期檔案會被忽略、OpenSpec／程式碼／測試與 `tests/fixtures/` 合成資料不會被誤排除，且缺少必要設定時有明確錯誤
+- [x] 1.1 建立 npm workspace、`apps/web`、`apps/server`、`packages/shared` 與根層 TypeScript 設定，並以安裝、型別檢查及空白建置指令驗證所有 workspace 可運作
+- [x] 1.2 加入 React、Vite、Express、Socket.IO、SQLite、ExcelJS、Vitest、Supertest 與 Playwright 依賴，並驗證鎖定檔可在乾淨環境重現安裝
+- [x] 1.3 在 shared package 定義活動狀態、角色、錯誤格式、HTTP DTO、Socket 事件與執行期驗證 schema，並以型別與 schema 單元測試驗證合法及錯誤 payload
+- [x] 1.4 建立繁體中文錯誤處理 middleware、健康檢查端點及不洩漏 stack／絕對路徑的回應格式，並以 Supertest 驗證成功與例外回應
+- [x] 1.5 建立 `var/data`、`var/uploads`、`var/exports` 的可配置路徑與啟動檢查，確認 `.gitignore` 明確忽略整個 `var/`，並以 `git check-ignore` 驗證執行期檔案會被忽略、OpenSpec／程式碼／測試與 `tests/fixtures/` 合成資料不會被誤排除，且缺少必要設定時有明確錯誤
 
 ## 2. SQLite Schema 與資料存取
 
-- [ ] 2.1 建立版本化 SQL migration，包含 activities 的單調接收序號計數器，以及 groups、sessions、questions、submission_attempts、current_submissions、result_entries、export_records；`submission_attempts` 必須含 `session_id`、`server_received_at`、`receive_sequence`、`UNIQUE(activity_id, receive_sequence)` 與 `UNIQUE(session_id, question_id, idempotency_key)`，並在暫存資料庫測試唯一鍵／外鍵
-- [ ] 2.2 初始化 SQLite foreign keys、WAL 與 busy timeout，並以整合測試驗證 foreign key 與唯一限制確實生效
+- [x] 2.1 建立版本化 SQL migration，包含 activities 的單調接收序號計數器，以及 groups、sessions、questions、submission_attempts、current_submissions、result_entries、export_records；`submission_attempts` 必須含 `session_id`、`server_received_at`、`receive_sequence`、`UNIQUE(activity_id, receive_sequence)` 與 `UNIQUE(session_id, question_id, idempotency_key)`，並在暫存資料庫測試唯一鍵／外鍵
+- [x] 2.2 初始化 SQLite foreign keys、WAL 與 busy timeout，並以整合測試驗證 foreign key 與唯一限制確實生效
 - [ ] 2.3 實作 activity、group、session 與 question repositories，並以 repository 測試驗證建立、查詢、更新及不存在資料的結果
 - [ ] 2.4 實作 `DRAFT -> OPEN -> CLOSED` 狀態檢查與 revision 遞增工具，並以單元測試驗證合法、跳級、反轉及重複 close 行為
-- [ ] 2.5 實作測試用暫存 SQLite lifecycle，並驗證每個測試可獨立建立、migration 及清理而不使用開發資料庫
+- [x] 2.5 實作測試用暫存 SQLite lifecycle，並驗證每個測試可獨立建立、migration 及清理而不使用開發資料庫
 
 ## 3. Guided Notes 動態匯入
 
