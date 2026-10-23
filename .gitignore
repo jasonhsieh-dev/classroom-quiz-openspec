@@ -27,6 +27,7 @@ blob-report/
 *.sqlite-wal
 
 # Runtime files
+var/
 uploads/
 exports/
 storage/
