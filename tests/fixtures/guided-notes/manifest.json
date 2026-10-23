@@ -1,0 +1,49 @@
+{
+  "fixtures": [
+    {
+      "filename": "reference-single-template.xlsx",
+      "kind": "reference",
+      "description": "使用者提供且已確認不含作者 metadata 或個資的單題型 Guided Notes 範本"
+    },
+    {
+      "filename": "synthetic-single.xlsx",
+      "kind": "valid",
+      "description": "合成單題版面與合併答案範圍"
+    },
+    {
+      "filename": "synthetic-moved-multiple.xlsx",
+      "kind": "valid",
+      "description": "移動表頭、不同題數、文字題號、空白分隔列及既有答案"
+    },
+    {
+      "filename": "synthetic-semantic-rich.xlsx",
+      "kind": "valid",
+      "description": "多工作表、公式、格式、合併範圍、列高、欄寬及隱藏狀態"
+    },
+    {
+      "filename": "invalid-missing-header.xlsx",
+      "kind": "invalid",
+      "description": "缺少作答表頭"
+    },
+    {
+      "filename": "invalid-multiple-candidates.xlsx",
+      "kind": "invalid",
+      "description": "兩個工作表皆有表頭候選"
+    },
+    {
+      "filename": "invalid-duplicate-question.xlsx",
+      "kind": "invalid",
+      "description": "正規化後重複題號"
+    },
+    {
+      "filename": "invalid-missing-answer.xlsx",
+      "kind": "invalid",
+      "description": "題目列沒有可辨識的答案儲存格"
+    },
+    {
+      "filename": "invalid-overlapping-answer.xlsx",
+      "kind": "invalid",
+      "description": "兩題映射至同一跨列合併答案範圍"
+    }
+  ]
+}
