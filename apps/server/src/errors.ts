@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
 import type { ApiError } from "@classroom-buzzer/shared";
+import { RepositoryError } from "./db/repositories/errors.js";
 
 export class AppError extends Error {
   constructor(
@@ -11,6 +12,19 @@ export class AppError extends Error {
     super(message);
     this.name = "AppError";
   }
+}
+
+export function repositoryErrorToAppError(error: unknown): AppError {
+  if (!(error instanceof RepositoryError)) {
+    return new AppError(500, "INTERNAL_ERROR", "伺服器發生未預期錯誤。");
+  }
+  const status =
+    error.code === "NOT_FOUND"
+      ? 404
+      : error.code === "CONFLICT"
+        ? 409
+        : 400;
+  return new AppError(status, `REPOSITORY_${error.code}`, error.message);
 }
 
 export const notFoundHandler: RequestHandler = (_request, response) => {

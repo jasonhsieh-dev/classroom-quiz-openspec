@@ -8,7 +8,7 @@ import {
 export interface SessionRecord {
   id: string;
   role: Role;
-  activityId: string;
+  activityId: string | null;
   groupId: string | null;
   createdAt: string;
   expiresAt: string;
@@ -17,7 +17,7 @@ export interface SessionRecord {
 interface SessionRow {
   id: string;
   role: Role;
-  activity_id: string;
+  activity_id: string | null;
   group_id: string | null;
   created_at: string;
   expires_at: string;
@@ -26,7 +26,7 @@ interface SessionRow {
 export interface CreateSessionInput {
   id: string;
   role: Role;
-  activityId: string;
+  activityId: string | null;
   groupId: string | null;
   createdAt: string;
   expiresAt: string;
@@ -102,4 +102,5 @@ export class SessionRepository {
       rethrowRepositoryError(error, "Session");
     }
   }
+
 }

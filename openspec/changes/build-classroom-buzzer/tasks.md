@@ -23,39 +23,39 @@
 - [x] 3.3 實作跨工作表「題號」／「作答」唯一表頭候選掃描，並以單元測試驗證列欄移動、空白分隔列、缺少表頭與多重候選
 - [x] 3.4 實作題號字串化、唯一性檢查、答案普通儲存格／合併範圍解析及重疊檢查，並以 fixture 測試確認不含任何固定範例座標
 - [x] 3.5 實作匯入 preview DTO，顯示題數、題號、工作表、題號 cell、答案 range、原值與覆蓋警告，並以 snapshot 測試驗證空白及非空答案格
-- [ ] 3.6 實作暫存 import draft、取消／過期清理及確認後保存來源 SHA-256、mapping 與 `DRAFT` 活動的 API，並以整合測試驗證取消不留活動、失敗不產生部分資料
-- [ ] 3.7 建立老師匯入與預覽畫面，並以元件測試驗證解析結果、警告、取消、確認及錯誤訊息
+- [x] 3.6 實作暫存 import draft、取消／過期清理及確認後保存來源 SHA-256、mapping 與 `DRAFT` 活動的 API，並以整合測試驗證取消不留活動、失敗不產生部分資料
+- [x] 3.7 建立老師匯入與預覽畫面，並以元件測試驗證解析結果、警告、取消、確認及錯誤訊息
 - [x] 3.8 在開始實作匯出前，以目前單題範本與完整語意 fixtures 執行 ExcelJS load/save round-trip 技術驗證；完整比較所有工作表、非目標值與公式、格式、合併範圍、列高、欄寬及隱藏狀態，只有 ExcelJS 未達契約時才記錄證據並選用最小 XML cell 替換 fallback，之後所有匯出任務沿用通過驗證的策略
 
 ## 4. 組別、角色與 Session 隔離
 
-- [ ] 4.1 實作 HttpOnly、SameSite session cookie 與 teacher／student role middleware，並以 Supertest 驗證缺少、過期及錯誤角色 session 被拒絕
-- [ ] 4.2 實作本機老師 session 入口並記錄無 PIN Demo 威脅模型，驗證學生 session 無法存取老師端點
-- [ ] 4.3 實作 `DRAFT` 活動組別新增、重新命名、刪除與名稱正規化，並以整合測試驗證空白、重複名稱及 `OPEN/CLOSED` 後禁止修改
-- [ ] 4.4 實作學生可選組別查詢與選組 session 建立 API，並以測試驗證不存在、跨活動組別被拒絕及同組多 session 被允許
-- [ ] 4.5 建立老師組別管理與學生選組畫面，並以元件測試驗證合法流程、欄位錯誤及活動階段限制
-- [ ] 4.6 對學生 snapshot、submission 與 result service 強制從 session 取得 group，並以竄改 URL、body、query 的整合測試確認無法跨組讀取或提交
+- [x] 4.1 實作 HttpOnly、SameSite session cookie 與 teacher／student role middleware，並以 Supertest 驗證缺少、過期及錯誤角色 session 被拒絕
+- [x] 4.2 實作本機老師 session 入口並記錄無 PIN Demo 威脅模型，驗證學生 session 無法存取老師端點
+- [x] 4.3 實作 `DRAFT` 活動組別新增、重新命名、刪除與名稱正規化，並以整合測試驗證空白、重複名稱及 `OPEN/CLOSED` 後禁止修改
+- [x] 4.4 實作學生可選組別查詢與選組 session 建立 API，並以測試驗證不存在、跨活動組別被拒絕及同組多 session 被允許
+- [x] 4.5 建立老師組別管理與學生選組畫面，並以元件測試驗證合法流程、欄位錯誤及活動階段限制
+- [x] 4.6 對學生 snapshot、submission 與 result service 強制從 session 取得 group，並以竄改 URL、body、query 的整合測試確認無法跨組讀取或提交
 
 ## 5. 活動生命週期與權威快照
 
-- [ ] 5.1 實作開始活動交易，驗證至少一題、至少一組、有效 mapping 及沒有其他 `OPEN` 活動，並以整合測試驗證成功與所有缺少前置條件
-- [ ] 5.2 實作所有題目同時開放的老師 API 與學生題號清單，並以測試確認不存在逐題鎖定且不同組可選相同或不同題目
-- [ ] 5.3 實作 teacher 與 student 權威 snapshot builder，依角色裁切 activity、question、group 與 submission 資料，並以 DTO 測試比較兩種輸出
-- [ ] 5.4 實作「同時間最多一場 OPEN 活動」限制，並以兩場草稿活動的整合測試驗證第二場開始被拒絕
-- [ ] 5.5 建立老師開始控制與學生依活動狀態切換的畫面，並以元件測試驗證 `DRAFT/OPEN/CLOSED` 的可用操作
-- [ ] 5.6 建立老師結束活動 UI：僅在 `OPEN` 顯示結束按鈕、要求確認、防止請求中重複點擊，分別處理成功、伺服器回覆已結束與 API 失敗，成功或已結束時切換至唯讀結果畫面、失敗時保留可重試狀態；以元件及 API mock 測試所有分支
+- [x] 5.1 實作開始活動交易，驗證至少一題、至少一組、有效 mapping 及沒有其他 `OPEN` 活動，並以整合測試驗證成功與所有缺少前置條件
+- [x] 5.2 實作所有題目同時開放的老師 API 與學生題號清單，並以測試確認不存在逐題鎖定且不同組可選相同或不同題目
+- [x] 5.3 實作 teacher 與 student 權威 snapshot builder，依角色裁切 activity、question、group 與 submission 資料，並以 DTO 測試比較兩種輸出
+- [x] 5.4 實作「同時間最多一場 OPEN 活動」限制，並以兩場草稿活動的整合測試驗證第二場開始被拒絕
+- [x] 5.5 建立老師開始控制與學生依活動狀態切換的畫面，並以元件測試驗證 `DRAFT/OPEN/CLOSED` 的可用操作
+- [x] 5.6 建立老師結束活動 UI：僅在 `OPEN` 顯示結束按鈕、要求確認、防止請求中重複點擊，分別處理成功、伺服器回覆已結束與 API 失敗，成功或已結束時切換至唯讀結果畫面、失敗時保留可重試狀態；以元件及 API mock 測試所有分支
 
 ## 6. 提交、修改、順位與截止交易
 
-- [ ] 6.1 實作提交輸入驗證，涵蓋活動、題目、session、trim 後非空及 2,000 字長度限制，並以整合測試驗證錯誤提交不改變資料
-- [ ] 6.2 實作 `BEGIN IMMEDIATE` 提交交易，在所有驗證通過後於同一交易內依寫入序列化順序配置唯一單調 `receive_sequence`，另寫入僅供紀錄／顯示的 `server_received_at`、attempt、current submission 與 revision，並驗證客戶端時間與 body groupId 不影響保存或順位
-- [ ] 6.3 實作修改答案的不可變歷程與 current pointer 更新，並以測試驗證舊歷程保留、最新答案生效及有效接收時間重設
-- [ ] 6.4 實作 `UNIQUE(session_id, question_id, idempotency_key)` 冪等處理：相同 key 與相同正規化答案回傳原結果且不新增歷程／序號／時間，相同 key 與不同答案回傳 `IDEMPOTENCY_CONFLICT` 且不改變資料；以 API 與資料庫整合測試驗證兩條路徑
-- [ ] 6.5 實作學生多題提交及同組多 session 更新，並以整合測試驗證每個「組別＋題目」互相獨立
-- [ ] 6.6 實作 close 寫入交易，在狀態切換時只依每題 current submissions 的 `receive_sequence` 建立 result entries，並以測試驗證各題獨立順位、相同 `server_received_at` 仍依接收序號排序與無人作答
-- [ ] 6.7 實作 close 冪等行為，並以重複請求測試驗證 `closed_at`、revision 與結果不被重新產生
-- [ ] 6.8 建立並行提交測試，以同步 barrier 驗證至少兩組同題／不同題近乎同時提交時無遺失更新且接收序號唯一
-- [ ] 6.9 建立提交與截止競爭測試，分別驗證提交先完成時納入結果、close 先完成時提交被拒絕，且兩種順序都沒有部分寫入
+- [x] 6.1 實作提交輸入驗證，涵蓋活動、題目、session、trim 後非空及 2,000 字長度限制，並以整合測試驗證錯誤提交不改變資料
+- [x] 6.2 實作 `BEGIN IMMEDIATE` 提交交易，在所有驗證通過後於同一交易內依寫入序列化順序配置唯一單調 `receive_sequence`，另寫入僅供紀錄／顯示的 `server_received_at`、attempt、current submission 與 revision，並驗證客戶端時間與 body groupId 不影響保存或順位
+- [x] 6.3 實作修改答案的不可變歷程與 current pointer 更新，並以測試驗證舊歷程保留、最新答案生效及有效接收時間重設
+- [x] 6.4 實作 `UNIQUE(session_id, question_id, idempotency_key)` 冪等處理：相同 key 與相同正規化答案回傳原結果且不新增歷程／序號／時間，相同 key 與不同答案回傳 `IDEMPOTENCY_CONFLICT` 且不改變資料；以 API 與資料庫整合測試驗證兩條路徑
+- [x] 6.5 實作學生多題提交及同組多 session 更新，並以整合測試驗證每個「組別＋題目」互相獨立
+- [x] 6.6 實作 close 寫入交易，在狀態切換時只依每題 current submissions 的 `receive_sequence` 建立 result entries，並以測試驗證各題獨立順位、相同 `server_received_at` 仍依接收序號排序與無人作答
+- [x] 6.7 實作 close 冪等行為，並以重複請求測試驗證 `closed_at`、revision 與結果不被重新產生
+- [x] 6.8 建立並行提交測試，以同步 barrier 驗證至少兩組同題／不同題近乎同時提交時無遺失更新且接收序號唯一
+- [x] 6.9 建立提交與截止競爭測試，分別驗證提交先完成時納入結果、close 先完成時提交被拒絕，且兩種順序都沒有部分寫入
 - [ ] 6.10 建立學生題號選擇、答案編輯、提交狀態及修改確認畫面，並以元件測試驗證多題作答、重送處理及截止後唯讀
 - [ ] 6.11 以可控制的伺服器時鐘測試相同 timestamp 與系統時鐘倒退，確認 `server_received_at` 只影響顯示、`receive_sequence` 仍單調且最終順位不反轉；同時斷言修改答案取得新序號並失去舊順位
 

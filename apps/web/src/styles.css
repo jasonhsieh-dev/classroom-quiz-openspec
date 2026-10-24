@@ -1,35 +1,118 @@
 :root {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #172033;
-  background: #f4f7fb;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  color: #182133;
+  background: #f3f6fb;
+  font-synthesis: none;
 }
 
-body {
-  margin: 0;
-}
-
-.shell {
-  width: min(880px, calc(100% - 2rem));
-  margin: 5rem auto;
-}
-
-.eyebrow {
-  color: #3157c8;
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, input, select { font: inherit; }
+button {
+  border: 0;
+  border-radius: 0.7rem;
+  padding: 0.8rem 1.1rem;
+  color: white;
+  background: #3157c8;
   font-weight: 700;
+  cursor: pointer;
+}
+button:disabled { cursor: wait; opacity: 0.62; }
+button.secondary { color: #28334a; background: #e8edf6; }
+.shell { width: min(1040px, calc(100% - 2rem)); margin: 3.5rem auto; }
+.page-header { margin-bottom: 1.5rem; }
+.page-header h1 { margin: 0.25rem 0; font-size: clamp(2rem, 5vw, 3rem); }
+.page-header > p:last-child { color: #5d687c; }
+.eyebrow, .status-label {
+  margin: 0;
+  color: #3157c8;
+  font-size: 0.82rem;
+  font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-
-.roles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 1rem;
-  margin-top: 2rem;
-}
-
-.roles section {
-  padding: 1.5rem;
+.card {
+  padding: clamp(1.25rem, 4vw, 2rem);
   border: 1px solid #dbe3f2;
   border-radius: 1rem;
   background: white;
+  box-shadow: 0 12px 30px rgb(28 48 91 / 8%);
+}
+.upload-panel { display: grid; gap: 1rem; }
+.file-picker, .field { display: grid; gap: 0.55rem; font-weight: 700; }
+.file-picker small, .muted, .preview-note { color: #69758a; font-weight: 400; }
+.file-picker input, .field input {
+  width: 100%;
+  border: 1px solid #b9c5d9;
+  border-radius: 0.65rem;
+  padding: 0.75rem;
+  background: #fff;
+}
+.field select {
+  width: 100%;
+  border: 1px solid #b9c5d9;
+  border-radius: 0.65rem;
+  padding: 0.75rem;
+  background: #fff;
+}
+.inline-form { display: flex; align-items: end; gap: 0.75rem; }
+.inline-form .field { flex: 1; }
+.group-list { list-style: none; padding: 0; margin: 1rem 0 0; }
+.group-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid #e5e7eb;
+}
+.question-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5rem, 1fr));
+  gap: 0.75rem;
+}
+.result-panel { margin-top: 1rem; padding: 1rem; border-radius: 0.75rem; background: #f5f8fc; }
+.selected-file { margin: 0; color: #33415c; }
+.alert { display: grid; gap: 0.25rem; margin-bottom: 1rem; padding: 1rem 1.2rem; border-radius: 0.75rem; }
+.alert.error { border: 1px solid #efb4b4; color: #8d2020; background: #fff1f1; }
+.preview-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.preview-heading h2, .success-panel h2 { margin: 0.3rem 0 0; }
+.count-badge {
+  border-radius: 999px;
+  padding: 0.45rem 0.75rem;
+  color: #294cae;
+  background: #e8efff;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.field { margin-bottom: 1.25rem; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 0.85rem; border-bottom: 1px solid #e2e8f2; text-align: left; vertical-align: top; }
+th { color: #526078; background: #f7f9fc; font-size: 0.88rem; }
+code { color: #244aa9; font-size: 0.9rem; }
+.warning { color: #985c00; font-weight: 700; }
+.preview-note { margin: 1.25rem 0; }
+.actions { display: flex; justify-content: flex-end; gap: 0.75rem; }
+.success-panel { border-color: #a9d7c0; }
+.summary-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 0;
+}
+.summary-list div { padding: 0.9rem; border-radius: 0.7rem; background: #f5f8fc; }
+.summary-list dt { color: #68748a; font-size: 0.8rem; }
+.summary-list dd { margin: 0.2rem 0 0; font-weight: 700; overflow-wrap: anywhere; }
+
+@media (max-width: 620px) {
+  .shell { margin: 1.5rem auto; }
+  .preview-heading, .actions { align-items: stretch; flex-direction: column; }
 }

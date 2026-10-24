@@ -133,7 +133,7 @@ describe("SessionRepository", () => {
     const teacher = sessions.create({
       id: "teacher-session",
       role: "teacher",
-      activityId: "activity-1",
+      activityId: null,
       groupId: null,
       createdAt,
       expiresAt: "2026-10-23T02:00:00.000Z",
@@ -147,7 +147,8 @@ describe("SessionRepository", () => {
       expiresAt: "2026-10-23T02:00:00.000Z",
     });
 
-    expect(sessions.listByActivity("activity-1")).toEqual([student, teacher]);
+    expect(teacher).toMatchObject({ activityId: null, groupId: null });
+    expect(sessions.listByActivity("activity-1")).toEqual([student]);
     expect(
       sessions.updateExpiration(
         student.id,
@@ -165,10 +166,34 @@ describe("SessionRepository", () => {
     expectRepositoryCode(
       () =>
         sessions.create({
+          id: "scoped-teacher",
+          role: "teacher",
+          activityId: "activity-1",
+          groupId: null,
+          createdAt,
+          expiresAt: createdAt,
+        }),
+      "INVALID_DATA",
+    );
+    expectRepositoryCode(
+      () =>
+        sessions.create({
           id: "student-without-group",
           role: "student",
           activityId: "activity-1",
           groupId: null,
+          createdAt,
+          expiresAt: createdAt,
+        }),
+      "INVALID_DATA",
+    );
+    expectRepositoryCode(
+      () =>
+        sessions.create({
+          id: "student-without-activity",
+          role: "student",
+          activityId: null,
+          groupId: "group-1",
           createdAt,
           expiresAt: createdAt,
         }),

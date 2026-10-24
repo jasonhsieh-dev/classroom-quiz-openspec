@@ -114,4 +114,13 @@ export class GroupRepository {
       rethrowRepositoryError(error, "組別");
     }
   }
+
+  delete(id: string): void {
+    try {
+      const result = this.database.prepare("DELETE FROM groups WHERE id = ?").run(id);
+      if (result.changes === 0) throw entityNotFound("組別", id);
+    } catch (error) {
+      rethrowRepositoryError(error, "組別");
+    }
+  }
 }

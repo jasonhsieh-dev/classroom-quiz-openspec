@@ -12,6 +12,8 @@ import {
   resolveRuntimePaths,
 } from "./config/runtime-paths.js";
 import { initializeDatabase } from "./db/database.js";
+import { registerApplicationRoutes } from "./application-routes.js";
+import { GuidedNotesImportService } from "./guided-notes/import-service.js";
 
 export async function startServer(environment: NodeJS.ProcessEnv = process.env) {
   const runtimePaths = resolveRuntimePaths(environment);
@@ -19,7 +21,15 @@ export async function startServer(environment: NodeJS.ProcessEnv = process.env) 
   const database = initializeDatabase(
     join(runtimePaths.data, "classroom-quiz.sqlite"),
   );
-  const app = createApp();
+  const guidedNotesImports = new GuidedNotesImportService(database, runtimePaths);
+  await guidedNotesImports.cleanupExpired();
+  const app = createApp({
+    registerRoutes(instance) {
+      registerApplicationRoutes(instance, database, runtimePaths, {
+        guidedNotesImports,
+      });
+    },
+  });
   const httpServer = createServer(app);
   const io = new SocketIOServer<
     ClientToServerEvents,

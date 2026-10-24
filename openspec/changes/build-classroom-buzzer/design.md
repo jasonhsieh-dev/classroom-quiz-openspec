@@ -55,7 +55,7 @@ SQLite 檔案存於 `var/data/classroom-quiz.sqlite`，啟用 foreign keys、WAL
 |---|---|
 | `activities` | `id`、`title`、`state`、`revision`、`next_receive_sequence`、`source_file_path`、`source_sha256`、`opened_at`、`closed_at`; state 僅為 `DRAFT/OPEN/CLOSED` |
 | `groups` | `id`、`activity_id`、`name`、`normalized_name`; `(activity_id, normalized_name)` 唯一 |
-| `sessions` | opaque `id`、`role`、`activity_id`、nullable `group_id`、`created_at`、`expires_at`; 學生 session 必須有 group |
+| `sessions` | opaque `id`、`role`、nullable `activity_id/group_id`、`created_at`、`expires_at`; 老師兩個 scope 欄位皆為 `NULL`，學生兩者皆不可為 `NULL` 且 group 必須屬於 activity |
 | `questions` | `id`、`activity_id`、`display_number`、`sort_order`、`sheet_name`、`number_cell`、`answer_range`、`answer_anchor`、序列化 `original_answer`; `(activity_id, display_number)` 唯一 |
 | `submission_attempts` | 自增 `id`、`activity_id`、`question_id`、`group_id`、`session_id`、`answer`、`server_received_at`、`receive_sequence`、`idempotency_key`; 歷程不可變；`(activity_id, receive_sequence)` 唯一，`(session_id, question_id, idempotency_key)` 唯一 |
 | `current_submissions` | `activity_id`、`question_id`、`group_id`、`attempt_id`; `(question_id, group_id)` 唯一 |
@@ -70,7 +70,9 @@ SQLite 檔案存於 `var/data/classroom-quiz.sqlite`，啟用 foreign keys、WAL
 
 瀏覽器使用 HttpOnly、SameSite=Lax 的 opaque session cookie，伺服器只保存 session ID 對應的角色與組別。學生選組 API 建立 `role=student` 且綁定 `activity_id/group_id` 的 session；學生 submission 與 snapshot 一律從 session 取 group，不讀取 body 中的 group 身分。
 
-老師從本機老師入口建立 `role=teacher` session。因本階段不使用 PIN 或帳號，威脅模型只保證既有學生 session 無法呼叫老師端點或跨組讀取資料，不保證使用者無法另開新 session 冒選組別或老師入口。此限制需在 README 與 Demo 說明標示。
+老師從僅接受 loopback 連線的本機老師入口建立 `role=teacher` session。老師 session 是本機執行個體層級，因此 `activity_id` 與 `group_id` 均為 `NULL`；它可以建立活動並管理本機執行個體中的活動。老師角色固定由伺服器建立，忽略客戶端宣告的 role。因本階段不使用 PIN 或帳號，威脅模型只保證既有學生 session 無法呼叫老師端點或跨組讀取資料，不保證能操作本機電腦的使用者無法另開新 session 冒選組別或進入老師入口。此限制記錄於 `docs/security-model.md`，並需在 Task 10.4 的 README 與 Demo 說明整合標示。
+
+Session ID 使用 opaque 隨機值並由 SQLite 保存，瀏覽器透過 `HttpOnly`、`SameSite=Lax` cookie 傳送；HTTPS 請求另設定 `Secure`，cookie 與資料庫 session 使用相同有效期限。老師入口與老師端點除 loopback 限制外，對不安全 HTTP 方法拒絕瀏覽器宣告的 cross-site 請求，並在 `Origin` 存在時只接受 loopback origin，以降低本機無 PIN 入口的 CSRF 風險。無 `Origin` 的本機工具仍可用於測試與受控操作；此策略不適用於公開部署。
 
 Express middleware 先驗證 role，再由 service 層套用活動與組別限制。前端隱藏按鈕僅改善體驗，不作為授權控制。
 

@@ -1,12 +1,25 @@
-import { existsSync } from "node:fs";
+import Database from "better-sqlite3";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { initializeDatabase } from "./database.js";
 import { createTestDatabase, type TestDatabase } from "./test-database.js";
 
 const databases: TestDatabase[] = [];
+const legacyDirectories: string[] = [];
 
 afterEach(() => {
   for (const database of databases.splice(0)) {
     database.cleanup();
+  }
+  for (const directory of legacyDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
   }
 });
 
@@ -27,6 +40,75 @@ function insertActivity(database: TestDatabase["database"], id = "activity-1") {
 }
 
 describe("SQLite 初始化與 migrations", () => {
+  it("由舊 schema 升級時將既有老師 session 轉成全域 scope 並保留學生綁定", () => {
+    const directory = mkdtempSync(join(tmpdir(), "classroom-buzzer-legacy-"));
+    legacyDirectories.push(directory);
+    const filename = join(directory, "legacy.sqlite");
+    const legacy = new Database(filename);
+    legacy.pragma("foreign_keys = ON");
+    legacy.exec(readFileSync(new URL("./migrations/001_initial.sql", import.meta.url), "utf8"));
+    legacy.exec(readFileSync(new URL("./migrations/002_import_drafts.sql", import.meta.url), "utf8"));
+    legacy.exec(`
+      CREATE TABLE schema_migrations (
+        filename TEXT PRIMARY KEY,
+        applied_at TEXT NOT NULL
+      );
+      INSERT INTO schema_migrations VALUES
+        ('001_initial.sql', '2026-10-23T00:00:00.000Z'),
+        ('002_import_drafts.sql', '2026-10-23T00:01:00.000Z');
+    `);
+    const now = "2026-10-23T01:00:00.000Z";
+    insertActivity(legacy, "activity-1");
+    legacy
+      .prepare(
+        "INSERT INTO groups (id, activity_id, name, normalized_name, created_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run("group-1", "activity-1", "第一組", "第一組", now);
+    const insertLegacySession = legacy.prepare(
+      "INSERT INTO sessions (id, role, activity_id, group_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+    );
+    insertLegacySession.run(
+      "teacher-session",
+      "teacher",
+      "activity-1",
+      null,
+      now,
+      "2026-10-23T09:00:00.000Z",
+    );
+    insertLegacySession.run(
+      "student-session",
+      "student",
+      "activity-1",
+      "group-1",
+      now,
+      "2026-10-23T09:00:00.000Z",
+    );
+    legacy.close();
+
+    const migrated = initializeDatabase(filename);
+    expect(
+      migrated
+        .prepare(
+          "SELECT id, role, activity_id, group_id FROM sessions ORDER BY id",
+        )
+        .all(),
+    ).toEqual([
+      {
+        id: "student-session",
+        role: "student",
+        activity_id: "activity-1",
+        group_id: "group-1",
+      },
+      {
+        id: "teacher-session",
+        role: "teacher",
+        activity_id: null,
+        group_id: null,
+      },
+    ]);
+    migrated.close();
+  });
+
   it("建立完整 schema 並記錄 migration", () => {
     const { database } = createDatabase();
     const tables = database
@@ -46,12 +128,17 @@ describe("SQLite 初始化與 migrations", () => {
         "current_submissions",
         "result_entries",
         "export_records",
+        "import_drafts",
         "schema_migrations",
       ]),
     );
     expect(
       database.prepare("SELECT filename FROM schema_migrations").all(),
-    ).toEqual([{ filename: "001_initial.sql" }]);
+    ).toEqual([
+      { filename: "001_initial.sql" },
+      { filename: "002_import_drafts.sql" },
+      { filename: "003_global_teacher_sessions.sql" },
+    ]);
   });
 
   it("啟用 foreign keys、WAL 與 busy timeout", () => {
@@ -77,6 +164,65 @@ describe("SQLite 初始化與 migrations", () => {
     expect(() =>
       insertGroup.run("group-3", "missing", "第三組", "第三組", new Date().toISOString()),
     ).toThrow();
+  });
+
+  it("強制老師為全域 session，學生同時綁定同活動的 group", () => {
+    const { database } = createDatabase();
+    insertActivity(database, "activity-1");
+    insertActivity(database, "activity-2");
+    const now = new Date().toISOString();
+    database
+      .prepare(
+        "INSERT INTO groups (id, activity_id, name, normalized_name, created_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run("group-1", "activity-1", "第一組", "第一組", now);
+    const insertSession = database.prepare(
+      "INSERT INTO sessions (id, role, activity_id, group_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+    );
+
+    expect(() =>
+      insertSession.run("teacher", "teacher", null, null, now, now),
+    ).not.toThrow();
+    expect(() =>
+      insertSession.run(
+        "scoped-teacher",
+        "teacher",
+        "activity-1",
+        null,
+        now,
+        now,
+      ),
+    ).toThrow();
+    expect(() =>
+      insertSession.run(
+        "student-without-group",
+        "student",
+        "activity-1",
+        null,
+        now,
+        now,
+      ),
+    ).toThrow();
+    expect(() =>
+      insertSession.run(
+        "cross-activity",
+        "student",
+        "activity-2",
+        "group-1",
+        now,
+        now,
+      ),
+    ).toThrow();
+    expect(() =>
+      insertSession.run(
+        "student",
+        "student",
+        "activity-1",
+        "group-1",
+        now,
+        now,
+      ),
+    ).not.toThrow();
   });
 
   it("強制接收序號及冪等鍵唯一限制", () => {
