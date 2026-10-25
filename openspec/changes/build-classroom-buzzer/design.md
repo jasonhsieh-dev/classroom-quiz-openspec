@@ -39,7 +39,7 @@ tests/fixtures   合成 Guided Notes
 var/             本機資料庫、上傳與匯出（Git ignored）
 ```
 
-前端使用 React、Vite、TypeScript；後端使用 Node.js、Express、TypeScript；共用型別與執行期驗證 schema 放在 `packages/shared`。同一個 Web 應用依路由提供老師與學生頁面，開發模式可由 Vite proxy 連接 Express，展示模式由 Express 提供建置後靜態檔案。
+前端使用 React、Vite、TypeScript；後端使用 Node.js、Express、TypeScript；共用型別與執行期驗證 schema 放在 `packages/shared`。同一個 Web 應用依路由提供老師與學生頁面。本機開發與期末展示均使用 `npm run dev` 同時啟動 Vite 前端及 Express／Socket.IO 後端，並由 Vite proxy 連接後端；`npm start` 僅啟動建置後的 API／Socket.IO 伺服器，不提供前端靜態檔案。Express 不負責代管建置後的前端。
 
 選擇理由：技術種類少、文件與測試工具成熟，Socket.IO 與 HTTP 可共用 session。替代方案 Next.js 會增加 server/client boundary；Firebase 會引入雲端帳號與安全規則；純靜態前端無法提供權威排序與交易截止。
 
@@ -142,7 +142,7 @@ SQLite 單寫者與 `BEGIN IMMEDIATE` 使提交及 close 的寫入交易序列�
 - 老師：`activity:{activityId}:teacher`
 - 學生：`activity:{activityId}:group:{groupId}`
 
-共用通知包括 `activity.opened`、`activity.closed`、`submission.updated` 與 `snapshot.invalidated`。相同事件名稱可依 room 使用不同 payload：老師的 `submission.updated` 含組別、答案與時間；學生版本只含本組資料。截止通知不夾帶其他組結果，學生收到後經受限 snapshot／results API 取得成功組別名稱或識別碼及本組資料。不得先廣播完整 payload 再由前端過濾。
+目前啟用的狀態變更通知為 `activity.opened`、`activity.closed` 與 `submission.updated`。相同事件名稱可依 room 使用不同 payload：老師的 `submission.updated` 含組別、答案與時間；學生版本只含本組資料。截止通知不夾帶其他組結果，學生收到後經受限 snapshot／results API 取得成功組別名稱或識別碼及本組資料。不得先廣播完整 payload 再由前端過濾。共用型別中的 `snapshot.invalidated` 保留供未來擴充，但本 Change 不發送或監聽該事件，且沒有 Requirement 或 Scenario 依賴它；目前同步由上述三種通知及初始連線、斷線重連與明確重新整理時取得的 HTTP snapshot 完成。
 
 socket 是通知與即時體驗通道，HTTP/SQLite 才是權威。socket 斷線時仍可依 HTTP 處理提交；重連事件觸發重新抓取權限裁切的 snapshot，並以快照完整取代目前可見狀態。系統不重播斷線期間事件，也不承諾在 socket 持續連線但單一通知未抵達時只靠 revision 跳號立即修復；使用者可藉明確重新整理重新取 snapshot。重連後 snapshot 失敗時 UI 標示尚未同步、停用寫入並提供重試。
 

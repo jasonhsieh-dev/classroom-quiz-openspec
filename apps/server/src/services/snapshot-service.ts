@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import type { StudentActivitySnapshot, TeacherActivitySnapshot } from "@classroom-buzzer/shared";
 import { ActivityRepository, GroupRepository, QuestionRepository } from "../db/repositories/index.js";
 import { AppError, repositoryErrorToAppError } from "../errors.js";
+import { ResultService } from "./result-service.js";
 
 interface SubmissionRow {
   question_id: string;
@@ -14,17 +15,20 @@ export class SnapshotService {
   private readonly activities: ActivityRepository;
   private readonly groups: GroupRepository;
   private readonly questions: QuestionRepository;
+  private readonly results: ResultService;
 
   constructor(private readonly database: Database.Database) {
     this.activities = new ActivityRepository(database);
     this.groups = new GroupRepository(database);
     this.questions = new QuestionRepository(database);
+    this.results = new ResultService(database);
   }
 
   teacher(activityId: string): TeacherActivitySnapshot {
     try {
+      const base = this.base(activityId);
       return {
-        ...this.base(activityId),
+        ...base,
         role: "teacher",
         groups: this.groups.listByActivity(activityId).map(({ id, name }) => ({ id, name })),
         submissions: this.submissions(activityId).map((row) => ({
@@ -33,6 +37,7 @@ export class SnapshotService {
           answer: row.answer,
           serverReceivedAt: row.server_received_at,
         })),
+        results: base.state === "CLOSED" ? this.results.teacher(activityId) : null,
       } satisfies TeacherActivitySnapshot;
     } catch (error) {
       if (error instanceof AppError) throw error;
@@ -46,8 +51,9 @@ export class SnapshotService {
       if (group.activityId !== activityId) {
         throw new AppError(403, "ACTIVITY_SCOPE_FORBIDDEN", "不得存取其他活動或組別的資料。");
       }
+      const base = this.base(activityId);
       return {
-        ...this.base(activityId),
+        ...base,
         role: "student",
         group: { id: group.id, name: group.name },
         submissions: this.submissions(activityId)
@@ -57,6 +63,7 @@ export class SnapshotService {
             answer: row.answer,
             serverReceivedAt: row.server_received_at,
           })),
+        results: base.state === "CLOSED" ? this.results.student(activityId, groupId) : null,
       } satisfies StudentActivitySnapshot;
     } catch (error) {
       if (error instanceof AppError) throw error;

@@ -12,9 +12,12 @@
     "dev:server": "npm run dev --workspace @classroom-buzzer/server",
     "dev:web": "npm run dev --workspace @classroom-buzzer/web",
     "build": "npm run build --workspace @classroom-buzzer/shared && npm run build --workspace @classroom-buzzer/server && npm run build --workspace @classroom-buzzer/web",
+    "lint": "biome lint apps packages tests playwright.config.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:all": "npm test && npm run test:e2e",
     "start": "npm run start --workspace @classroom-buzzer/server"
   },
   "engines": {
@@ -22,6 +25,7 @@
     "npm": ">=10.0.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.6.3",
     "@playwright/test": "^1.64.1",
     "@types/node": "^26.6.5",
     "@vitest/coverage-v8": "^5.0.5",

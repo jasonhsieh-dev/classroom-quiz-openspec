@@ -7,7 +7,9 @@ import {
   RoleSchema,
   StudentSubmissionUpdatedEventSchema,
   StudentActivitySnapshotSchema,
+  StudentActivityResultsSchema,
   TeacherActivitySnapshotSchema,
+  TeacherActivityResultsSchema,
   SubmissionResponseSchema,
   TeacherSessionResponseSchema,
 } from "./contracts.js";
@@ -108,14 +110,35 @@ describe("共用契約", () => {
     expect(TeacherActivitySnapshotSchema.parse({
       ...base, role: "teacher", groups: [{ id: "g1", name: "第一組" }],
       submissions: [{ questionId: "q1", groupId: "g1", answer: "答案", serverReceivedAt: "2026-10-24T02:00:00.000Z" }],
+      results: null,
     }).submissions[0]).toHaveProperty("groupId", "g1");
     expect(StudentActivitySnapshotSchema.parse({
       ...base, role: "student", group: { id: "g1", name: "第一組" },
       submissions: [{ questionId: "q1", answer: "答案", serverReceivedAt: "2026-10-24T02:00:00.000Z" }],
+      results: null,
     }).submissions[0]).not.toHaveProperty("groupId");
     expect(StudentActivitySnapshotSchema.safeParse({
       ...base, role: "student", group: { id: "g1", name: "第一組" },
-      groups: [{ id: "g2", name: "第二組" }], submissions: [],
+      groups: [{ id: "g2", name: "第二組" }], submissions: [], results: null,
+    }).success).toBe(false);
+  });
+
+  it("以獨立結果 DTO 在後端裁切老師與學生欄位", () => {
+    const question = { id: "q1", displayNumber: "1", sortOrder: 0 };
+    const winner = { id: "g2", name: "第二組" };
+    expect(TeacherActivityResultsSchema.parse({
+      activityId: "a1", revision: 5, closedAt: "2026-10-24T03:00:00.000Z",
+      questions: [{ question, winner, rankings: [{ group: winner, rank: 1, answer: "成功答案", serverReceivedAt: "2026-10-24T02:00:00.000Z" }] }],
+    }).questions[0]?.rankings[0]).toHaveProperty("serverReceivedAt");
+    const student = StudentActivityResultsSchema.parse({
+      activityId: "a1", revision: 5, closedAt: "2026-10-24T03:00:00.000Z", group: { id: "g1", name: "第一組" },
+      questions: [{ question, winner, ownResult: { status: "ANSWERED", answer: "本組答案", rank: 2 } }],
+    });
+    expect(JSON.stringify(student)).not.toContain("成功答案");
+    expect(JSON.stringify(student)).not.toContain("serverReceivedAt");
+    expect(StudentActivityResultsSchema.safeParse({
+      ...student,
+      questions: [{ ...student.questions[0], otherGroupAnswer: "不可公開" }],
     }).success).toBe(false);
   });
 

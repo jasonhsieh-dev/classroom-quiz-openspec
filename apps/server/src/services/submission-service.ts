@@ -19,6 +19,16 @@ interface SubmitInput {
 interface SubmissionServiceOptions {
   clock?: () => string;
   maxAnswerLength?: number;
+  onCommitted?: (event: SubmissionCommittedEvent) => void;
+}
+
+export interface SubmissionCommittedEvent {
+  activityId: string;
+  questionId: string;
+  groupId: string;
+  answer: string;
+  serverReceivedAt: string;
+  revision: number;
 }
 
 export class SubmissionService {
@@ -27,6 +37,7 @@ export class SubmissionService {
   private readonly submissions: SubmissionRepository;
   private readonly clock: () => string;
   private readonly maxAnswerLength: number;
+  private readonly onCommitted: ((event: SubmissionCommittedEvent) => void) | undefined;
 
   constructor(
     private readonly database: Database.Database,
@@ -37,6 +48,7 @@ export class SubmissionService {
     this.submissions = new SubmissionRepository(database);
     this.clock = options.clock ?? (() => new Date().toISOString());
     this.maxAnswerLength = options.maxAnswerLength ?? DEFAULT_MAX_ANSWER_LENGTH;
+    this.onCommitted = options.onCommitted;
   }
 
   submit(session: SessionRecord, input: SubmitInput): SubmissionResponse {
@@ -47,7 +59,7 @@ export class SubmissionService {
     const idempotencyKey = this.requireIdempotencyKey(input.idempotencyKey);
 
     try {
-      return this.database.transaction(() => {
+      const outcome = this.database.transaction(() => {
         const existing = this.submissions.findByIdempotency(
           session.id,
           input.questionId,
@@ -61,7 +73,7 @@ export class SubmissionService {
               "相同提交識別碼已用於不同答案，請使用新的提交識別碼。",
             );
           }
-          return this.response(existing);
+          return { response: this.response(existing) };
         }
 
         const activity = this.activities.getById(session.activityId!);
@@ -98,12 +110,28 @@ export class SubmissionService {
           idempotencyKey,
         });
         this.submissions.setCurrent(attempt);
-        return this.response(attempt);
+        return {
+          response: this.response(attempt),
+          event: {
+            activityId: activity.id,
+            questionId: question.id,
+            groupId: session.groupId!,
+            answer: attempt.answer,
+            serverReceivedAt: attempt.serverReceivedAt,
+            revision: updated.revision,
+          } satisfies SubmissionCommittedEvent,
+        };
       }).immediate();
+      if (outcome.event) this.publishCommitted(outcome.event);
+      return outcome.response;
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw repositoryErrorToAppError(error);
     }
+  }
+
+  private publishCommitted(event: SubmissionCommittedEvent): void {
+    try { this.onCommitted?.(event); } catch { /* 即時通知失敗不得改變提交結果。 */ }
   }
 
   private requireAnswer(value: unknown): string {

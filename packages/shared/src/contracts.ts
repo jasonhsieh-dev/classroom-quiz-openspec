@@ -101,6 +101,7 @@ export const TeacherActivitySnapshotSchema = ActivitySnapshotSchema.extend({
   role: z.literal("teacher"),
   groups: z.array(GroupSummarySchema),
   submissions: z.array(TeacherVisibleSubmissionSchema),
+  results: z.lazy(() => TeacherActivityResultsSchema).nullable(),
 }).strict();
 export type TeacherActivitySnapshot = z.infer<typeof TeacherActivitySnapshotSchema>;
 
@@ -108,6 +109,7 @@ export const StudentActivitySnapshotSchema = ActivitySnapshotSchema.extend({
   role: z.literal("student"),
   group: GroupSummarySchema,
   submissions: z.array(StudentVisibleSubmissionSchema),
+  results: z.lazy(() => StudentActivityResultsSchema).nullable(),
 }).strict();
 export type StudentActivitySnapshot = z.infer<typeof StudentActivitySnapshotSchema>;
 
@@ -117,6 +119,55 @@ export const SubmissionResponseSchema = z.object({
   serverReceivedAt: z.string().datetime(),
 }).strict();
 export type SubmissionResponse = z.infer<typeof SubmissionResponseSchema>;
+
+export const TeacherRankedResultSchema = z.object({
+  group: GroupSummarySchema,
+  rank: z.number().int().positive(),
+  answer: z.string(),
+  serverReceivedAt: z.string().datetime(),
+}).strict();
+export type TeacherRankedResult = z.infer<typeof TeacherRankedResultSchema>;
+
+export const TeacherQuestionResultSchema = z.object({
+  question: QuestionSummarySchema,
+  winner: GroupSummarySchema.nullable(),
+  rankings: z.array(TeacherRankedResultSchema),
+}).strict();
+export type TeacherQuestionResult = z.infer<typeof TeacherQuestionResultSchema>;
+
+export const TeacherActivityResultsSchema = z.object({
+  activityId: z.string().min(1),
+  revision: z.number().int().nonnegative(),
+  closedAt: z.string().datetime(),
+  questions: z.array(TeacherQuestionResultSchema),
+}).strict();
+export type TeacherActivityResults = z.infer<typeof TeacherActivityResultsSchema>;
+
+export const StudentOwnResultSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("NOT_ANSWERED") }).strict(),
+  z.object({
+    status: z.literal("ANSWERED"),
+    answer: z.string(),
+    rank: z.number().int().positive(),
+  }).strict(),
+]);
+export type StudentOwnResult = z.infer<typeof StudentOwnResultSchema>;
+
+export const StudentQuestionResultSchema = z.object({
+  question: QuestionSummarySchema,
+  winner: GroupSummarySchema.nullable(),
+  ownResult: StudentOwnResultSchema,
+}).strict();
+export type StudentQuestionResult = z.infer<typeof StudentQuestionResultSchema>;
+
+export const StudentActivityResultsSchema = z.object({
+  activityId: z.string().min(1),
+  revision: z.number().int().nonnegative(),
+  closedAt: z.string().datetime(),
+  group: GroupSummarySchema,
+  questions: z.array(StudentQuestionResultSchema),
+}).strict();
+export type StudentActivityResults = z.infer<typeof StudentActivityResultsSchema>;
 
 export const GuidedNotesPreviewQuestionSchema = z
   .object({

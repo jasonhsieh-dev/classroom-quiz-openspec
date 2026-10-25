@@ -14,6 +14,12 @@ import {
 import { initializeDatabase } from "./db/database.js";
 import { registerApplicationRoutes } from "./application-routes.js";
 import { GuidedNotesImportService } from "./guided-notes/import-service.js";
+import { SessionService } from "./auth/session-auth.js";
+import {
+  configureSocketServer,
+  type ActivityEventPublisher,
+  type ClassroomSocketServer,
+} from "./realtime/socket-server.js";
 
 export async function startServer(environment: NodeJS.ProcessEnv = process.env) {
   const runtimePaths = resolveRuntimePaths(environment);
@@ -23,22 +29,28 @@ export async function startServer(environment: NodeJS.ProcessEnv = process.env) 
   );
   const guidedNotesImports = new GuidedNotesImportService(database, runtimePaths);
   await guidedNotesImports.cleanupExpired();
+  const sessions = new SessionService(database);
+  let realtime: ActivityEventPublisher | undefined;
+  const eventRelay: ActivityEventPublisher = {
+    opened: (event) => realtime?.opened(event),
+    closed: (event) => realtime?.closed(event),
+    submission: (event) => realtime?.submission(event),
+  };
   const app = createApp({
     registerRoutes(instance) {
       registerApplicationRoutes(instance, database, runtimePaths, {
         guidedNotesImports,
+        sessions,
+        events: eventRelay,
       });
     },
   });
   const httpServer = createServer(app);
-  const io = new SocketIOServer<
+  const io: ClassroomSocketServer = new SocketIOServer<
     ClientToServerEvents,
     ServerToClientEvents
   >(httpServer);
-
-  io.on("connection", (socket) => {
-    socket.on("connection.ready", (acknowledge) => acknowledge({ ready: true }));
-  });
+  realtime = configureSocketServer(io, database, sessions);
 
   const rawPort = environment.CLASSROOM_BUZZER_PORT ?? "3000";
   const port = Number.parseInt(rawPort, 10);

@@ -157,6 +157,39 @@ describe("活動截止與結果快照", () => {
     expect(clockCalls).toBe(1);
   });
 
+  it("相同 timestamp、時鐘倒退與修改都不反轉 receive_sequence 排名", () => {
+    const database = createDatabase();
+    const { s1, s2 } = openFixture(database);
+    const times = [
+      "2026-10-24T03:00:00.000Z",
+      "2026-10-24T03:00:00.000Z",
+      "2026-10-24T01:00:00.000Z",
+    ];
+    let index = 0;
+    const submissions = new SubmissionService(database.database, {
+      clock: () => times[index++]!,
+    });
+    submissions.submit(s1, { questionId: "q1", answer: "甲原答案", idempotencyKey: "g1-old" });
+    submissions.submit(s2, { questionId: "q1", answer: "乙答案", idempotencyKey: "g2" });
+    submissions.submit(s1, { questionId: "q1", answer: "甲修改答案", idempotencyKey: "g1-new" });
+
+    expect(new SubmissionRepository(database.database).listAttemptsByActivity("a1").map((attempt) => ({
+      answer: attempt.answer,
+      serverReceivedAt: attempt.serverReceivedAt,
+      receiveSequence: attempt.receiveSequence,
+    }))).toEqual([
+      { answer: "甲原答案", serverReceivedAt: times[0], receiveSequence: 1 },
+      { answer: "乙答案", serverReceivedAt: times[1], receiveSequence: 2 },
+      { answer: "甲修改答案", serverReceivedAt: times[2], receiveSequence: 3 },
+    ]);
+
+    new ActivityCloseService(database.database, () => "2026-10-24T04:00:00.000Z").close("a1");
+    expect(new ResultRepository(database.database).listByActivity("a1").map(({ groupId, attemptId, rank }) => ({ groupId, attemptId, rank }))).toEqual([
+      { groupId: "g2", attemptId: 2, rank: 1 },
+      { groupId: "g1", attemptId: 3, rank: 2 },
+    ]);
+  });
+
   it("API 拒絕未登入、學生、過期老師與不存在活動，老師可截止且截止後新提交被拒絕", async () => {
     const database = createDatabase();
     openFixture(database);

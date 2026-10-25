@@ -25,7 +25,7 @@ function resolveDirectory(
   fallback: string,
   baseDirectory: string,
 ): string {
-  const configured = Object.prototype.hasOwnProperty.call(environment, key)
+  const configured = Object.hasOwn(environment, key)
     ? environment[key]
     : fallback;
 

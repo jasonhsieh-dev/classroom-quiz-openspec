@@ -17,11 +17,16 @@ import { ActivityLifecycleService } from "./services/activity-lifecycle.js";
 import { ActivityCloseService } from "./services/activity-close.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { SubmissionService } from "./services/submission-service.js";
+import { ResultService } from "./services/result-service.js";
+import type { ActivityEventPublisher } from "./realtime/socket-server.js";
+import { closedEvent, openedEvent } from "./realtime/socket-server.js";
+import { GuidedNotesExportService } from "./guided-notes/export-service.js";
 
 interface ApplicationRouteServices {
   sessions?: SessionService;
   guidedNotesImports?: GuidedNotesImportService;
   submissions?: SubmissionService;
+  events?: ActivityEventPublisher;
 }
 
 export function registerApplicationRoutes(
@@ -34,7 +39,9 @@ export function registerApplicationRoutes(
   const guidedNotesImports =
     services.guidedNotesImports ??
     new GuidedNotesImportService(database, runtimePaths);
-  const submissions = services.submissions ?? new SubmissionService(database);
+  const submissions = services.submissions ?? new SubmissionService(database, {
+    onCommitted: (event) => services.events?.submission(event),
+  });
 
   app.use("/api/teacher", requireLoopbackRequest, protectLocalMutation);
   app.use("/api/teacher", createTeacherSessionRouter(sessions));
@@ -52,9 +59,11 @@ export function registerApplicationRoutes(
     "/api/teacher/activities/:activityId",
     requireRole(sessions, "teacher"),
     createTeacherActivityRouter(
-      new ActivityLifecycleService(database),
-      new ActivityCloseService(database),
+      new ActivityLifecycleService(database, undefined, (activity) => services.events?.opened(openedEvent(activity))),
+      new ActivityCloseService(database, undefined, (result) => services.events?.closed(closedEvent(result))),
       new SnapshotService(database),
+      new ResultService(database),
+      new GuidedNotesExportService(database, runtimePaths),
     ),
   );
   app.use("/api/activities", createPublicActivityRouter(database));
@@ -65,6 +74,7 @@ export function registerApplicationRoutes(
       sessions,
       new SnapshotService(database),
       submissions,
+      new ResultService(database),
     ),
   );
 }

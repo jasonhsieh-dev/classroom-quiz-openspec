@@ -89,7 +89,11 @@ export class SessionService {
   }
 
   resolve(request: Request): SessionRecord {
-    const id = cookieValue(request.headers.cookie, SESSION_COOKIE_NAME);
+    return this.resolveCookieHeader(request.headers.cookie);
+  }
+
+  resolveCookieHeader(cookieHeader: string | undefined): SessionRecord {
+    const id = cookieValue(cookieHeader, SESSION_COOKIE_NAME);
     if (!id) {
       throw new AppError(401, "SESSION_REQUIRED", "需要有效的 session 才能存取此功能。");
     }

@@ -20,6 +20,7 @@ export class ActivityCloseService {
   constructor(
     private readonly database: Database.Database,
     private readonly clock: () => string = () => new Date().toISOString(),
+    private readonly onClosed?: (result: CloseActivityResult) => void,
   ) {
     this.activities = new ActivityRepository(database);
     this.results = new ResultRepository(database);
@@ -27,10 +28,10 @@ export class ActivityCloseService {
 
   close(activityId: string): CloseActivityResult {
     try {
-      return this.database.transaction(() => {
+      const outcome = this.database.transaction(() => {
         const activity = this.activities.getById(activityId);
         if (activity.state === "CLOSED") {
-          return this.response(activityId);
+          return { result: this.response(activityId), changed: false };
         }
         if (activity.state !== "OPEN") {
           throw new AppError(409, "ACTIVITY_NOT_OPEN", "只有進行中的活動可以結束。");
@@ -47,12 +48,18 @@ export class ActivityCloseService {
         }
 
         this.results.createFromCurrentSubmissions(activityId);
-        return this.response(activityId);
+        return { result: this.response(activityId), changed: true };
       }).immediate();
+      if (outcome.changed) this.publishClosed(outcome.result);
+      return outcome.result;
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw repositoryErrorToAppError(error);
     }
+  }
+
+  private publishClosed(result: CloseActivityResult): void {
+    try { this.onClosed?.(result); } catch { /* 即時通知失敗不得改變截止結果。 */ }
   }
 
   private response(activityId: string): CloseActivityResult {

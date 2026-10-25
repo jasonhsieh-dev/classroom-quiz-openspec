@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type {
   ActivityState,
   ApiError,
@@ -7,8 +7,17 @@ import type {
   GroupSummary,
   ImportDraftPreview,
   StudentSessionResponse,
-  StudentActivitySnapshot,
+  SubmissionResponse,
+  StudentActivityResults,
+  TeacherActivityResults,
 } from "@classroom-buzzer/shared";
+import { StudentActivityResultsSchema, TeacherActivityResultsSchema } from "@classroom-buzzer/shared";
+import {
+  useStudentActivitySync,
+  useTeacherActivitySync,
+  type ActivitySocketFactory,
+  type SyncStatus,
+} from "./use-activity-sync.js";
 
 type RequestState = "idle" | "uploading" | "confirming" | "cancelling";
 type SessionState = "loading" | "ready" | "error";
@@ -23,13 +32,14 @@ async function errorMessage(response: Response): Promise<string> {
   return "伺服器無法完成匯入，請稍後再試。";
 }
 
-export function TeacherGroupManager({ activity }: { activity: ConfirmImportResponse }) {
+export function TeacherGroupManager({ activity, socketFactory }: { activity: ConfirmImportResponse; socketFactory?: ActivitySocketFactory }) {
   const [groups, setGroups] = useState<GroupSummary[]>([]);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [activityState, setActivityState] = useState<ActivityState>(activity.state);
   const [closing, setClosing] = useState(false);
+  const [liveSyncStatus, setLiveSyncStatus] = useState<SyncStatus>("loading");
 
   async function addGroup(event: FormEvent) {
     event.preventDefault();
@@ -123,6 +133,7 @@ export function TeacherGroupManager({ activity }: { activity: ConfirmImportRespo
   return <section className="card">
     <p className="status-label">活動狀態：{activityState}</p>
     <h2>{activity.title}</h2>
+    <p>活動識別碼：<code>{activity.activityId}</code></p>
     <p>本活動共 {activity.questionCount} 題。</p>
     {error && <div className="alert error" role="alert">{error}</div>}
     <form onSubmit={addGroup} className="inline-form">
@@ -131,28 +142,209 @@ export function TeacherGroupManager({ activity }: { activity: ConfirmImportRespo
     </form>
     {groups.length === 0 ? <p className="muted">尚未建立組別。</p> : <ul className="group-list">{groups.map((group) => <li key={group.id}><span>{group.name}</span><div className="actions"><button type="button" className="secondary" disabled={busyId !== null || activityState !== "DRAFT"} onClick={() => void renameGroup(group)}>重新命名</button><button type="button" className="secondary" disabled={busyId !== null || activityState !== "DRAFT"} onClick={() => void deleteGroup(group)}>刪除</button></div></li>)}</ul>}
     {activityState === "DRAFT" && <div className="actions"><button type="button" disabled={busyId !== null} onClick={() => void openActivity()}>{busyId === "open" ? "開始中…" : "開始搶答"}</button></div>}
-    {activityState === "OPEN" && <><p className="warning">活動進行中：全部題目已同時開放，組別不可修改。</p><div className="actions"><button type="button" disabled={closing} onClick={() => void closeActivity()}>{closing ? "結束中…" : "結束活動"}</button></div></>}
-    {activityState === "CLOSED" && <div className="result-panel"><h3>唯讀結果</h3><p>活動已結束，不能再修改組別或提交答案。</p></div>}
+    {activityState === "OPEN" && <><p className="warning">活動進行中：全部題目已同時開放，組別不可修改。</p><div className="actions"><button type="button" disabled={closing || liveSyncStatus !== "synced"} onClick={() => void closeActivity()}>{closing ? "結束中…" : "結束活動"}</button></div><TeacherLiveMonitor activityId={activity.activityId} {...(socketFactory ? { socketFactory } : {})} onStateChange={setActivityState} onSyncStatusChange={setLiveSyncStatus} /></>}
+    {activityState === "CLOSED" && <TeacherResultsPage activityId={activity.activityId} />}
   </section>;
 }
 
-export function StudentActivityView({ session }: { session: StudentSessionResponse }) {
-  const [snapshot, setSnapshot] = useState<StudentActivitySnapshot | null>(null);
+export function TeacherResultsPage({ activityId }: { activityId: string }) {
+  const [results, setResults] = useState<TeacherActivityResults | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   useEffect(() => {
     let active = true;
-    void fetch(`/api/student/activities/${session.activityId}/snapshot`, { credentials: "same-origin" })
-      .then(async (response) => { if (!response.ok) throw new Error(await errorMessage(response)); return response.json() as Promise<StudentActivitySnapshot>; })
-      .then((body) => { if (active) setSnapshot(body); })
-      .catch((caught: unknown) => { if (active) setError(caught instanceof Error ? caught.message : "同步活動狀態失敗。"); });
+    void (async () => {
+      try {
+        const response = await fetch(`/api/teacher/activities/${activityId}/results`, { credentials: "same-origin" });
+        if (!response.ok) throw new Error(await errorMessage(response));
+        const parsed = TeacherActivityResultsSchema.safeParse(await response.json());
+        if (!parsed.success) throw new Error("伺服器回傳的老師結果格式無效。");
+        if (active) setResults(parsed.data);
+      } catch (caught) {
+        if (active) setError(caught instanceof Error ? caught.message : "無法取得完整結果。");
+      }
+    })();
     return () => { active = false; };
-  }, [session.activityId]);
-  if (error) return <section className="card"><div className="alert error" role="alert">{error}</div></section>;
-  if (!snapshot) return <section className="card" aria-live="polite">正在同步活動狀態…</section>;
+  }, [activityId]);
+  async function downloadGuidedNotes() {
+    setExporting(true); setError(null);
+    try {
+      const response = await fetch(`/api/teacher/activities/${activityId}/exports`, { method: "POST", credentials: "same-origin" });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const blob = await response.blob();
+      const disposition = response.headers.get("content-disposition") ?? "";
+      const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+      const filename = encoded ? decodeURIComponent(encoded) : "Guided-Notes-搶答結果.xlsx";
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url; anchor.download = filename; anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "匯出失敗，請稍後再試。");
+    } finally { setExporting(false); }
+  }
+  return <section className="result-panel"><h3>唯讀結果</h3><p>活動已結束；人工檢查不會改變成功組別或順位。</p>
+    <div className="actions"><button type="button" onClick={() => void downloadGuidedNotes()} disabled={!results || exporting}>{exporting ? "產生匯出檔中…" : "下載已回填 Guided Notes"}</button></div>
+    {error && <div className="alert error" role="alert">{error}</div>}
+    {!results && !error && <p aria-live="polite">正在載入完整結果…</p>}
+    {results?.questions.map((item) => <article className="question-result" key={item.question.id}>
+      <h4>題號 {item.question.displayNumber}</h4>
+      <p>成功組別：{item.winner?.name ?? "無人作答"}</p>
+      {item.rankings.length > 0 && <div className="table-wrap"><table><thead><tr><th>順位</th><th>組別</th><th>答案</th><th>最後有效提交時間</th></tr></thead><tbody>{item.rankings.map((entry) => <tr key={entry.group.id}><td>{entry.rank}</td><td>{entry.group.name}</td><td>{entry.answer}</td><td><time>{entry.serverReceivedAt}</time></td></tr>)}</tbody></table></div>}
+    </article>)}
+  </section>;
+}
+
+export function StudentResultsPage({ activityId, initialResults }: { activityId: string; initialResults: StudentActivityResults | null }) {
+  const [results, setResults] = useState<StudentActivityResults | null>(initialResults);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setResults(initialResults);
+    if (initialResults) return;
+    let active = true;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/student/activities/${activityId}/results`, { credentials: "same-origin" });
+        if (!response.ok) throw new Error(await errorMessage(response));
+        const parsed = StudentActivityResultsSchema.safeParse(await response.json());
+        if (!parsed.success) throw new Error("伺服器回傳的學生結果格式無效。");
+        if (active) setResults(parsed.data);
+      } catch (caught) {
+        if (active) setError(caught instanceof Error ? caught.message : "無法取得結果。");
+      }
+    })();
+    return () => { active = false; };
+  }, [activityId, initialResults]);
+  return <section className="result-panel"><h3>唯讀結果</h3><p>活動已結束，不能再提交或修改答案。</p>
+    {error && <div className="alert error" role="alert">{error}</div>}
+    {!results && !error && <p aria-live="polite">正在載入本組結果…</p>}
+    {results?.questions.map((item) => <article className="question-result" key={item.question.id}>
+      <h4>題號 {item.question.displayNumber}</h4>
+      <p>成功組別：{item.winner?.name ?? "無人作答"}</p>
+      {item.ownResult.status === "ANSWERED"
+        ? <dl><div><dt>本組答案</dt><dd>{item.ownResult.answer}</dd></div><div><dt>本組順位</dt><dd>{item.ownResult.rank}</dd></div></dl>
+        : <p className="muted">本組未作答</p>}
+    </article>)}
+  </section>;
+}
+
+export function TeacherLiveMonitor({
+  activityId,
+  socketFactory,
+  onStateChange,
+  onSyncStatusChange,
+}: {
+  activityId: string;
+  socketFactory?: ActivitySocketFactory;
+  onStateChange?: (state: ActivityState) => void;
+  onSyncStatusChange?: (status: SyncStatus) => void;
+}) {
+  const sync = useTeacherActivitySync(activityId, socketFactory);
+  useEffect(() => { if (sync.snapshot) onStateChange?.(sync.snapshot.state); }, [onStateChange, sync.snapshot]);
+  useEffect(() => { onSyncStatusChange?.(sync.status); }, [onSyncStatusChange, sync.status]);
+  if (!sync.snapshot) return <section className="live-monitor" aria-live="polite">{sync.status === "unsynced" ? <><div className="alert error" role="alert">即時狀態尚未同步：{sync.error}</div><button type="button" onClick={() => void sync.refresh()}>重試同步</button></> : "正在同步老師監看畫面…"}</section>;
+  const groupNames = new Map(sync.snapshot.groups.map((group) => [group.id, group.name]));
+  return <section className="live-monitor"><div className="monitor-heading"><h3>即時提交監看</h3><span>revision {sync.snapshot.revision}</span></div>
+    {sync.status === "unsynced" && <div className="alert error" role="alert"><span>即時狀態尚未同步：{sync.error}</span><button type="button" onClick={() => void sync.refresh()}>重試同步</button></div>}
+    <div className="monitor-grid">{sync.snapshot.questions.map((question) => {
+      const submissions = sync.snapshot!.submissions.filter((item) => item.questionId === question.id);
+      return <article key={question.id}><h4>題號 {question.displayNumber}</h4>{submissions.length === 0 ? <p className="muted">尚無組別提交</p> : <ul>{submissions.map((submission) => <li key={submission.groupId}><strong>{groupNames.get(submission.groupId) ?? submission.groupId}</strong><span>{submission.answer}</span><time>{submission.serverReceivedAt}</time></li>)}</ul>}</article>;
+    })}</div>
+  </section>;
+}
+
+export function StudentActivityView({ session, socketFactory }: { session: StudentSessionResponse; socketFactory?: ActivitySocketFactory }) {
+  const sync = useStudentActivitySync(session.activityId, socketFactory);
+  const { snapshot, setSnapshot } = sync;
+  const [error, setError] = useState<string | null>(null);
+  const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
+  const [answer, setAnswer] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const pendingSubmission = useRef<{ questionId: string; answer: string; key: string } | null>(null);
+  function selectQuestion(questionId: string) {
+    setSelectedQuestionId(questionId);
+    setAnswer(snapshot?.submissions.find((item) => item.questionId === questionId)?.answer ?? "");
+    setError(null);
+  }
+
+  async function submitAnswer(event: FormEvent) {
+    event.preventDefault();
+    if (snapshot?.state !== "OPEN" || !selectedQuestionId) return;
+    const normalizedAnswer = answer.trim();
+    if (!normalizedAnswer) {
+      setError("答案去除前後空白後不得為空。");
+      return;
+    }
+    const current = snapshot.submissions.find((item) => item.questionId === selectedQuestionId);
+    if (current && current.answer !== normalizedAnswer && !window.confirm("確定要修改這一題的答案嗎？重新提交會更新有效提交時間與順位。")) {
+      return;
+    }
+    const pending = pendingSubmission.current;
+    const key = pending?.questionId === selectedQuestionId && pending.answer === normalizedAnswer
+      ? pending.key
+      : crypto.randomUUID();
+    pendingSubmission.current = { questionId: selectedQuestionId, answer: normalizedAnswer, key };
+    setSubmitting(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/student/activities/${session.activityId}/questions/${selectedQuestionId}/submission`,
+        {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ answer: normalizedAnswer, idempotencyKey: key }),
+        },
+      );
+      if (!response.ok) {
+        const body = await response.json().catch(() => undefined) as Partial<ApiError> | undefined;
+        if (body?.error?.code === "ACTIVITY_CLOSED") {
+          setSnapshot((value) => value ? { ...value, state: "CLOSED" } : value);
+        }
+        throw new Error(body?.error?.message ?? "提交答案失敗，請稍後再試。");
+      }
+      const submitted = (await response.json()) as SubmissionResponse;
+      pendingSubmission.current = null;
+      setAnswer(submitted.answer);
+      setSnapshot((value) => value ? {
+        ...value,
+        submissions: [
+          ...value.submissions.filter((item) => item.questionId !== submitted.questionId),
+          submitted,
+        ],
+      } : value);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "提交答案失敗，請稍後再試。");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedQuestionId || !snapshot) return;
+    const current = snapshot.submissions.find((item) => item.questionId === selectedQuestionId);
+    if (current) setAnswer(current.answer);
+  }, [selectedQuestionId, snapshot]);
+
+  if (!snapshot) return <section className="card" aria-live="polite">{sync.status === "unsynced" ? <><div className="alert error" role="alert">即時狀態尚未同步：{sync.error}</div><button type="button" onClick={() => void sync.refresh()}>重試同步</button></> : "正在同步活動狀態…"}</section>;
+  const selectedQuestion = snapshot.questions.find((item) => item.id === selectedQuestionId);
+  const currentSubmission = snapshot.submissions.find((item) => item.questionId === selectedQuestionId);
   return <section className="card"><p className="status-label">活動狀態：{snapshot.state}</p><h2>{session.group.name}</h2>
+    {error && <div className="alert error" role="alert">{error}</div>}
+    {sync.status === "unsynced" && <div className="alert error" role="alert"><span>即時狀態尚未同步：{sync.error}</span><button type="button" onClick={() => void sync.refresh()}>重試同步</button></div>}
     {snapshot.state === "DRAFT" && <p>等待老師開始搶答。</p>}
-    {snapshot.state === "OPEN" && <><p>全部題目已開放，可自由選擇題號。</p><div className="question-grid">{snapshot.questions.map((question) => <button type="button" key={question.id}>{question.displayNumber}</button>)}</div></>}
-    {snapshot.state === "CLOSED" && <div className="result-panel"><h3>唯讀結果</h3><p>活動已結束，不能再提交或修改答案。</p></div>}
+    {snapshot.state === "OPEN" && <><p>全部題目已開放，可自由選擇題號。</p><div className="question-grid">{snapshot.questions.map((question) => {
+      const submitted = snapshot.submissions.some((item) => item.questionId === question.id);
+      return <button type="button" aria-label={question.displayNumber} className={selectedQuestionId === question.id ? "selected" : ""} key={question.id} onClick={() => selectQuestion(question.id)}>{question.displayNumber}<small>{submitted ? "已提交" : "未作答"}</small></button>;
+    })}</div>
+      {selectedQuestion && <form className="answer-editor" onSubmit={submitAnswer}>
+        <h3>題號 {selectedQuestion.displayNumber}</h3>
+        {currentSubmission && <p className="submission-status">本組已提交；最後有效時間：{currentSubmission.serverReceivedAt}</p>}
+        <label className="field"><span>答案</span><textarea aria-label="答案" value={answer} maxLength={2000} onChange={(event) => setAnswer(event.target.value)} disabled={submitting || sync.status !== "synced"} /></label>
+        <button type="submit" disabled={submitting || sync.status !== "synced" || !answer.trim()}>{submitting ? "提交中…" : currentSubmission ? "修改答案" : "提交答案"}</button>
+      </form>}
+    </>}
+    {snapshot.state === "CLOSED" && <StudentResultsPage activityId={session.activityId} initialResults={snapshot.results ?? null} />}
   </section>;
 }
 
@@ -194,7 +386,7 @@ export function StudentJoin() {
 
   return <main className="shell"><header className="page-header"><p className="eyebrow">Classroom Buzzer · 學生端</p><h1>選擇組別</h1></header>
     {error && <div className="alert error" role="alert">{error}</div>}
-    {session ? <StudentActivityView session={session} /> : !join ? <form className="card" onSubmit={load}><label className="field"><span>活動識別碼</span><input value={activityId} onChange={(event) => setActivityId(event.target.value)} /></label><button disabled={busy}>查詢活動</button></form> : <form className="card" onSubmit={choose}><p>活動狀態：{join.state}</p><label className="field"><span>選擇組別</span><select aria-label="選擇組別" value={selected} onChange={(event) => setSelected(event.target.value)}>{join.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>{join.groups.length === 0 && <p className="warning">老師尚未建立組別。</p>}<button disabled={busy || !selected}>進入活動</button></form>}
+    {session ? <StudentActivityView session={session} /> : !join ? <form className="card" onSubmit={load}><label className="field"><span>活動識別碼</span><input value={activityId} onChange={(event) => setActivityId(event.target.value)} /></label><button type="submit" disabled={busy}>查詢活動</button></form> : <form className="card" onSubmit={choose}><p>活動狀態：{join.state}</p><label className="field"><span>選擇組別</span><select aria-label="選擇組別" value={selected} onChange={(event) => setSelected(event.target.value)}>{join.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>{join.groups.length === 0 && <p className="warning">老師尚未建立組別。</p>}<button type="submit" disabled={busy || !selected}>進入活動</button></form>}
   </main>;
 }
 
@@ -203,7 +395,10 @@ function suggestedTitle(filename: string): string {
 }
 
 export function App() {
-  if (window.location.pathname.startsWith("/student")) return <StudentJoin />;
+  return window.location.pathname.startsWith("/student") ? <StudentJoin /> : <TeacherApp />;
+}
+
+function TeacherApp() {
   const sessionRequestStarted = useRef(false);
   const [sessionState, setSessionState] = useState<SessionState>("loading");
   const [file, setFile] = useState<File | null>(null);
@@ -215,7 +410,7 @@ export function App() {
 
   const busy = requestState !== "idle";
 
-  async function createTeacherSession() {
+  const createTeacherSession = useCallback(async () => {
     setSessionState("loading");
     setError(null);
     try {
@@ -233,13 +428,13 @@ export function App() {
           : "無法建立本機老師 session。",
       );
     }
-  }
+  }, []);
 
   useEffect(() => {
     if (sessionRequestStarted.current) return;
     sessionRequestStarted.current = true;
     void createTeacherSession();
-  }, []);
+  }, [createTeacherSession]);
 
   async function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

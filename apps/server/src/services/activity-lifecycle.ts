@@ -11,6 +11,7 @@ export class ActivityLifecycleService {
   constructor(
     private readonly database: Database.Database,
     private readonly clock: () => string = () => new Date().toISOString(),
+    private readonly onOpened?: (activity: ActivityRecord) => void,
   ) {
     this.activities = new ActivityRepository(database);
     this.groups = new GroupRepository(database);
@@ -19,7 +20,7 @@ export class ActivityLifecycleService {
 
   open(activityId: string): ActivityRecord {
     try {
-      return this.database.transaction(() => {
+      const activity = this.database.transaction(() => {
         const activity = this.activities.getById(activityId);
         if (activity.state !== "DRAFT") {
           throw new AppError(409, "ACTIVITY_NOT_DRAFT", "只有草稿活動可以開始。");
@@ -55,9 +56,15 @@ export class ActivityLifecycleService {
         }
         return this.activities.getById(activityId);
       }).immediate();
+      this.publishOpened(activity);
+      return activity;
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw repositoryErrorToAppError(error);
     }
+  }
+
+  private publishOpened(activity: ActivityRecord): void {
+    try { this.onOpened?.(activity); } catch { /* 即時通知失敗不得回滾已提交交易。 */ }
   }
 }
