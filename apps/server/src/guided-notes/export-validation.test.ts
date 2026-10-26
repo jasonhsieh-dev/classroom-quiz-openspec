@@ -8,7 +8,12 @@ import { parseGuidedNotesWorkbook } from "./parser.js";
 async function pair(): Promise<{ expected: ExcelJS.Workbook; actual: ExcelJS.Workbook; questions: QuestionRecord[] }> {
   const expected = await loadGuidedNotesFixture("synthetic-semantic-rich.xlsx");
   const actual = await loadGuidedNotesFixture("synthetic-semantic-rich.xlsx");
-  const questions = parseGuidedNotesWorkbook(expected).map((mapping, index) => ({ id: `q${index}`, activityId: "a1", sortOrder: index, ...mapping }));
+  const questions = parseGuidedNotesWorkbook(expected).map((mapping, index) => ({
+    id: `q${index}`,
+    activityId: "a1",
+    sortOrder: index,
+    ...mapping,
+  }));
   return { expected, actual, questions };
 }
 
@@ -41,5 +46,15 @@ describe("完整活頁簿語意驗證", () => {
     const { actual, questions } = await pair();
     const wrong = questions.map((question, index) => index === 0 ? { ...question, answerAnchor: "Z99", answerRange: "Z99" } : question);
     expect(() => assertWorkbookMappings(actual, wrong)).toThrowError(expect.objectContaining({ code: "EXPORT_MAPPING_MISMATCH" }));
+  });
+
+  it("阻擋題目文字儲存格被匯出流程改寫", async () => {
+    const { expected, actual, questions } = await pair();
+    const first = questions[0]!;
+    const promptAnchor = first.promptRange!.split(":")[0]!;
+    actual.getWorksheet(first.sheetName)!.getCell(promptAnchor).value = "被錯誤改寫的題目";
+    expect(() => assertExportSemantics(expected, actual, questions)).toThrowError(
+      expect.objectContaining({ code: "EXPORT_SEMANTIC_MISMATCH" }),
+    );
   });
 });

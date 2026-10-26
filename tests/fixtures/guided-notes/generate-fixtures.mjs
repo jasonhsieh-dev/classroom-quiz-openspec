@@ -35,12 +35,15 @@ async function save(filename, build) {
   await workbook.xlsx.writeFile(`${outputDirectory}/${filename}`);
 }
 
-function addHeaders(sheet, row, numberColumn, answerColumn) {
+function addHeaders(sheet, row, numberColumn, promptColumn, answerColumn) {
   const numberCell = sheet.getCell(row, numberColumn);
+  const promptCell = sheet.getCell(row, promptColumn);
   const answerCell = sheet.getCell(row, answerColumn);
   numberCell.value = "題號";
+  promptCell.value = "題目";
   answerCell.value = "作答";
   numberCell.style = headerStyle;
+  promptCell.style = headerStyle;
   answerCell.style = headerStyle;
 }
 
@@ -50,9 +53,8 @@ await save("synthetic-single.xlsx", (workbook) => {
   const sheet = workbook.addWorksheet("學習單");
   sheet.mergeCells("B2:H2");
   sheet.getCell("B2").value = "合成單題學習單";
-  addHeaders(sheet, 4, 2, 7);
+  addHeaders(sheet, 4, 2, 3, 7);
   sheet.mergeCells("C4:F4");
-  sheet.getCell("C4").value = "題目";
   sheet.mergeCells("G4:H4");
   sheet.getCell("G4").style = headerStyle;
   sheet.getCell("B5").value = 1;
@@ -65,9 +67,8 @@ await save("synthetic-single.xlsx", (workbook) => {
 await save("synthetic-moved-multiple.xlsx", (workbook) => {
   workbook.addWorksheet("說明").getCell("A1").value = "合成測試說明";
   const sheet = workbook.addWorksheet("變形學習單");
-  addHeaders(sheet, 6, 4, 10);
+  addHeaders(sheet, 6, 4, 5, 10);
   sheet.mergeCells("E6:I6");
-  sheet.getCell("E6").value = "題目";
   sheet.mergeCells("J6:L6");
   sheet.getCell("J6").style = headerStyle;
   const questions = [
@@ -87,11 +88,24 @@ await save("synthetic-moved-multiple.xlsx", (workbook) => {
 
 await save("synthetic-semantic-rich.xlsx", (workbook) => {
   const sheet = workbook.addWorksheet("學習單");
-  addHeaders(sheet, 5, 3, 8);
+  addHeaders(sheet, 5, 3, 4, 8);
+  sheet.mergeCells("D5:G5");
   sheet.getCell("C6").value = "S1";
+  sheet.mergeCells("D6:G7");
+  sheet.getCell("D6").value = {
+    richText: [
+      { text: "合成富文字題目" },
+      { font: { bold: true }, text: "：特殊符號 <>&\n第二行" },
+    ],
+  };
   sheet.mergeCells("H6:J6");
   sheet.getCell("H6").style = answerStyle;
   sheet.getCell("C9").value = "S2";
+  sheet.mergeCells("D9:G9");
+  sheet.getCell("D9").value = {
+    formula: '"合成公式題目結果"',
+    result: "合成公式題目結果",
+  };
   sheet.getCell("H9").value = "既有合成答案";
   sheet.getCell("H9").style = answerStyle;
   sheet.getRow(5).height = 28;
@@ -123,38 +137,76 @@ await save("synthetic-semantic-rich.xlsx", (workbook) => {
 await save("invalid-missing-header.xlsx", (workbook) => {
   const sheet = workbook.addWorksheet("缺表頭");
   sheet.getCell("B2").value = "題號";
+  sheet.getCell("D2").value = "作答";
   sheet.getCell("B3").value = "1";
+  sheet.getCell("D3").style = answerStyle;
 });
 
 await save("invalid-multiple-candidates.xlsx", (workbook) => {
   for (const name of ["候選甲", "候選乙"]) {
     const sheet = workbook.addWorksheet(name);
-    addHeaders(sheet, 2, 1, 3);
+    addHeaders(sheet, 2, 1, 2, 3);
     sheet.getCell("A3").value = "1";
+    sheet.getCell("B3").value = `合成題目 ${name}`;
     sheet.getCell("C3").style = answerStyle;
   }
 });
 
 await save("invalid-duplicate-question.xlsx", (workbook) => {
   const sheet = workbook.addWorksheet("重複題號");
-  addHeaders(sheet, 2, 1, 3);
+  addHeaders(sheet, 2, 1, 2, 3);
   sheet.getCell("A3").value = "A1";
+  sheet.getCell("B3").value = "第一個合成題目";
   sheet.getCell("C3").style = answerStyle;
   sheet.getCell("A4").value = " Ａ１ ";
+  sheet.getCell("B4").value = "正規化後重複題號";
   sheet.getCell("C4").style = answerStyle;
 });
 
 await save("invalid-missing-answer.xlsx", (workbook) => {
   const sheet = workbook.addWorksheet("缺答案格");
-  addHeaders(sheet, 2, 1, 4);
+  addHeaders(sheet, 2, 1, 2, 4);
   sheet.getCell("A3").value = "1";
+  sheet.getCell("B3").value = "缺少答案位置的合成題目";
 });
 
 await save("invalid-overlapping-answer.xlsx", (workbook) => {
   const sheet = workbook.addWorksheet("重疊答案格");
-  addHeaders(sheet, 2, 1, 4);
+  addHeaders(sheet, 2, 1, 2, 4);
   sheet.getCell("A3").value = "1";
+  sheet.getCell("B3").value = "第一個合成題目";
   sheet.getCell("A4").value = "2";
+  sheet.getCell("B4").value = "第二個合成題目";
   sheet.mergeCells("D3:F4");
   sheet.getCell("D3").style = answerStyle;
+});
+
+await save("invalid-blank-prompt.xlsx", (workbook) => {
+  const sheet = workbook.addWorksheet("空白題目");
+  addHeaders(sheet, 2, 1, 2, 4);
+  sheet.getCell("A3").value = "1";
+  sheet.getCell("B3").value = "  \n  ";
+  sheet.mergeCells("D3:F3");
+  sheet.getCell("D3").style = answerStyle;
+});
+
+await save("invalid-shared-prompt-range.xlsx", (workbook) => {
+  const sheet = workbook.addWorksheet("共用題目範圍");
+  addHeaders(sheet, 2, 1, 2, 5);
+  sheet.getCell("A3").value = "1";
+  sheet.getCell("A4").value = "2";
+  sheet.mergeCells("B3:D4");
+  sheet.getCell("B3").value = "不應同時屬於兩個題號的合成題目";
+  sheet.getCell("E3").style = answerStyle;
+  sheet.getCell("E4").style = answerStyle;
+});
+
+await save("invalid-duplicate-prompt-header.xlsx", (workbook) => {
+  const sheet = workbook.addWorksheet("重複題目表頭");
+  addHeaders(sheet, 2, 1, 2, 5);
+  sheet.getCell("C2").value = "題目";
+  sheet.getCell("C2").style = headerStyle;
+  sheet.getCell("A3").value = "1";
+  sheet.getCell("B3").value = "無法唯一定位的合成題目";
+  sheet.getCell("E3").style = answerStyle;
 });

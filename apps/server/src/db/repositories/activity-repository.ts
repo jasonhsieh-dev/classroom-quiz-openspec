@@ -31,6 +31,28 @@ interface ActivityRow {
   created_at: string;
 }
 
+export interface ActivitySummaryRecord {
+  activityId: string;
+  title: string;
+  state: ActivityState;
+  revision: number;
+  createdAt: string;
+  openedAt: string | null;
+  closedAt: string | null;
+  questionCount: number;
+}
+
+interface ActivitySummaryRow {
+  activity_id: string;
+  title: string;
+  state: ActivityState;
+  revision: number;
+  created_at: string;
+  opened_at: string | null;
+  closed_at: string | null;
+  question_count: number;
+}
+
 export interface CreateActivityInput {
   id: string;
   title: string;
@@ -97,6 +119,36 @@ export class ActivityRepository {
         .prepare("SELECT * FROM activities ORDER BY created_at, id")
         .all() as ActivityRow[]
     ).map(toActivityRecord);
+  }
+
+  listSummaries(): ActivitySummaryRecord[] {
+    const rows = this.database
+      .prepare(
+        `SELECT
+           activities.id AS activity_id,
+           activities.title,
+           activities.state,
+           activities.revision,
+           activities.created_at,
+           activities.opened_at,
+           activities.closed_at,
+           COUNT(questions.id) AS question_count
+         FROM activities
+         LEFT JOIN questions ON questions.activity_id = activities.id
+         GROUP BY activities.id
+         ORDER BY activities.created_at DESC, activities.id DESC`,
+      )
+      .all() as ActivitySummaryRow[];
+    return rows.map((row) => ({
+      activityId: row.activity_id,
+      title: row.title,
+      state: row.state,
+      revision: row.revision,
+      createdAt: row.created_at,
+      openedAt: row.opened_at,
+      closedAt: row.closed_at,
+      questionCount: row.question_count,
+    }));
   }
 
   rename(id: string, title: string): ActivityRecord {

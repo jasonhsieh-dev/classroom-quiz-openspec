@@ -5,6 +5,7 @@ import {
   captureWorkbookSemantics,
   compareWorkbookSemantics,
 } from "./workbook-semantics.js";
+import { parseGuidedNotesWorkbook } from "./parser.js";
 
 async function roundTrip(filename: string) {
   const source = await loadGuidedNotesFixture(filename);
@@ -15,6 +16,8 @@ async function roundTrip(filename: string) {
   return {
     expected,
     actual: captureWorkbookSemantics(output),
+    sourceMappings: parseGuidedNotesWorkbook(source),
+    outputMappings: parseGuidedNotesWorkbook(output),
   };
 }
 
@@ -24,9 +27,10 @@ describe("ExcelJS XLSX round-trip 技術驗證", () => {
     "synthetic-moved-multiple.xlsx",
     "synthetic-semantic-rich.xlsx",
   ])("完整保留 %s 的必要語意", async (filename) => {
-    const { expected, actual } = await roundTrip(filename);
+    const { expected, actual, sourceMappings, outputMappings } = await roundTrip(filename);
 
     expect(compareWorkbookSemantics(expected, actual)).toEqual([]);
     expect(actual).toEqual(expected);
+    expect(outputMappings).toEqual(sourceMappings);
   });
 });

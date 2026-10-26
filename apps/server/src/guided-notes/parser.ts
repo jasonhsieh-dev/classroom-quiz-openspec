@@ -3,6 +3,8 @@ import { GuidedNotesError } from "./errors.js";
 
 export interface GuidedNotesQuestionMapping {
   displayNumber: string;
+  promptText: string;
+  promptRange: string;
   sheetName: string;
   numberCell: string;
   answerRange: string;
@@ -23,6 +25,7 @@ interface HeaderCandidate {
   worksheet: ExcelJS.Worksheet;
   headerRow: number;
   numberColumn: number;
+  promptColumn: number;
   answerColumn: number;
 }
 
@@ -49,26 +52,37 @@ function scanHeaderCandidates(workbook: ExcelJS.Workbook): HeaderCandidate[] {
     for (let rowNumber = 1; rowNumber <= worksheet.rowCount; rowNumber += 1) {
       const row = worksheet.getRow(rowNumber);
       const numberColumns: number[] = [];
+      const promptColumns: number[] = [];
       const answerColumns: number[] = [];
 
       row.eachCell({ includeEmpty: false }, (cell, columnNumber) => {
         if (isMergeSlave(cell)) return;
         const text = normalizedText(cell.text);
         if (text === "題號") numberColumns.push(columnNumber);
+        if (text === "題目") promptColumns.push(columnNumber);
         if (text === "作答") answerColumns.push(columnNumber);
       });
 
-      if (numberColumns.length === 1 && answerColumns.length === 1) {
+      if (
+        numberColumns.length === 1
+        && promptColumns.length === 1
+        && answerColumns.length === 1
+      ) {
         candidates.push({
           worksheet,
           headerRow: rowNumber,
           numberColumn: numberColumns[0]!,
+          promptColumn: promptColumns[0]!,
           answerColumn: answerColumns[0]!,
         });
-      } else if (numberColumns.length > 0 && answerColumns.length > 0) {
+      } else if (
+        numberColumns.length > 0
+        && promptColumns.length > 0
+        && answerColumns.length > 0
+      ) {
         throw new GuidedNotesError(
           "HEADER_AMBIGUOUS",
-          "同一表頭列包含重複的「題號」或「作答」，無法唯一辨識欄位。",
+          "同一表頭列包含重複的「題號」、「題目」或「作答」，無法唯一辨識欄位。",
           { sheetName: worksheet.name, row: rowNumber },
         );
       }
@@ -160,22 +174,30 @@ function hasCellStyle(cell: ExcelJS.Cell): boolean {
 function createMapping(
   candidate: HeaderCandidate,
   rowNumber: number,
-): { mapping: GuidedNotesQuestionMapping; range: CellRange } {
+): {
+  mapping: GuidedNotesQuestionMapping;
+  answerRange: CellRange;
+  promptRange: CellRange;
+} {
   const numberCell = candidate.worksheet.getCell(
     rowNumber,
     candidate.numberColumn,
+  );
+  const promptCell = candidate.worksheet.getCell(
+    rowNumber,
+    candidate.promptColumn,
   );
   const answerCell = candidate.worksheet.getCell(
     rowNumber,
     candidate.answerColumn,
   );
-  const mergedRange = mergedRangeAt(
+  const mergedAnswerRange = mergedRangeAt(
     candidate.worksheet,
     rowNumber,
     candidate.answerColumn,
   );
 
-  if (!mergedRange && answerCell.value == null && !hasCellStyle(answerCell)) {
+  if (!mergedAnswerRange && answerCell.value == null && !hasCellStyle(answerCell)) {
     throw new GuidedNotesError(
       "INVALID_ANSWER_MAPPING",
       `題號 ${numberCell.text.trim()} 缺少可辨識的答案儲存格。`,
@@ -187,18 +209,46 @@ function createMapping(
     );
   }
 
-  const range = mergedRange ?? parseRangeAddress(answerCell.address);
-  const anchorCell = candidate.worksheet.getCell(range.startRow, range.startColumn);
+  const answerRange = mergedAnswerRange ?? parseRangeAddress(answerCell.address);
+  const answerAnchorCell = candidate.worksheet.getCell(
+    answerRange.startRow,
+    answerRange.startColumn,
+  );
+  const promptRange = mergedRangeAt(
+    candidate.worksheet,
+    rowNumber,
+    candidate.promptColumn,
+  ) ?? parseRangeAddress(promptCell.address);
+  const promptAnchorCell = candidate.worksheet.getCell(
+    promptRange.startRow,
+    promptRange.startColumn,
+  );
+  const promptText = promptAnchorCell.text.trim();
+  if (!promptText) {
+    throw new GuidedNotesError(
+      "INVALID_PROMPT",
+      `題號 ${numberCell.text.trim()} 缺少非空的完整題目文字。`,
+      {
+        sheetName: candidate.worksheet.name,
+        row: rowNumber,
+        displayNumber: numberCell.text.trim(),
+        promptRange: promptRange.address,
+      },
+    );
+  }
   return {
     mapping: {
       displayNumber: numberCell.text.trim(),
+      promptText,
+      promptRange: promptRange.address,
       sheetName: candidate.worksheet.name,
       numberCell: numberCell.address,
-      answerRange: range.address,
-      answerAnchor: anchorCell.address,
-      originalAnswer: originalAnswerText(anchorCell),
+      answerRange: answerRange.address,
+      answerAnchor: answerAnchorCell.address,
+      originalAnswer: originalAnswerText(answerAnchorCell),
     },
-    range,
+    answerRange,
+    promptRange,
   };
 }
 
@@ -209,7 +259,7 @@ export function parseGuidedNotesWorkbook(
   if (candidates.length === 0) {
     throw new GuidedNotesError(
       "HEADER_NOT_FOUND",
-      "找不到同一列中的「題號」與「作答」表頭。",
+      "找不到同一列中的「題號」、「題目」與「作答」表頭。",
     );
   }
   if (candidates.length !== 1) {
@@ -228,7 +278,8 @@ export function parseGuidedNotesWorkbook(
   const candidate = candidates[0]!;
   const seenNumbers = new Map<string, string>();
   const mappings: GuidedNotesQuestionMapping[] = [];
-  const ranges: Array<{ range: CellRange; displayNumber: string }> = [];
+  const answerRanges: Array<{ range: CellRange; displayNumber: string }> = [];
+  const promptRanges: Array<{ range: CellRange; displayNumber: string }> = [];
 
   for (
     let rowNumber = candidate.headerRow + 1;
@@ -252,9 +303,12 @@ export function parseGuidedNotesWorkbook(
       );
     }
 
-    const { mapping, range } = createMapping(candidate, rowNumber);
-    const overlap = ranges.find((existing) =>
-      rangesOverlap(existing.range, range),
+    const { mapping, answerRange, promptRange } = createMapping(
+      candidate,
+      rowNumber,
+    );
+    const overlap = answerRanges.find((existing) =>
+      rangesOverlap(existing.range, answerRange),
     );
     if (overlap) {
       throw new GuidedNotesError(
@@ -262,16 +316,34 @@ export function parseGuidedNotesWorkbook(
         `題號 ${mapping.displayNumber} 與 ${overlap.displayNumber} 的答案範圍重疊。`,
         {
           displayNumber: mapping.displayNumber,
-          answerRange: mapping.answerRange,
+          answerRange: answerRange.address,
           overlapsWith: overlap.displayNumber,
           overlappingRange: overlap.range.address,
+        },
+      );
+    }
+    const sharedPrompt = promptRanges.find((existing) =>
+      rangesOverlap(existing.range, promptRange),
+    );
+    if (sharedPrompt) {
+      throw new GuidedNotesError(
+        "AMBIGUOUS_PROMPT_MAPPING",
+        `題號 ${mapping.displayNumber} 與 ${sharedPrompt.displayNumber} 共用或重疊題目範圍，無法唯一定位完整題目。`,
+        {
+          displayNumber: mapping.displayNumber,
+          promptRange: promptRange.address,
+          overlapsWith: sharedPrompt.displayNumber,
+          overlappingRange: sharedPrompt.range.address,
+          sheetName: candidate.worksheet.name,
+          row: rowNumber,
         },
       );
     }
 
     seenNumbers.set(normalizedNumber, numberCell.address);
     mappings.push(mapping);
-    ranges.push({ range, displayNumber: mapping.displayNumber });
+    answerRanges.push({ range: answerRange, displayNumber: mapping.displayNumber });
+    promptRanges.push({ range: promptRange, displayNumber: mapping.displayNumber });
   }
 
   if (mappings.length === 0) {

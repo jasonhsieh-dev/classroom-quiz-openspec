@@ -75,10 +75,28 @@ function parseMappings(draft: ImportDraftRecord): GuidedNotesQuestionMapping[] {
         typeof mapping !== "object" ||
         mapping === null ||
         !("displayNumber" in mapping) ||
+        typeof mapping.displayNumber !== "string" ||
+        !mapping.displayNumber.trim() ||
+        !("promptText" in mapping) ||
+        typeof mapping.promptText !== "string" ||
+        !mapping.promptText.trim() ||
+        !("promptRange" in mapping) ||
+        typeof mapping.promptRange !== "string" ||
+        !mapping.promptRange.trim() ||
         !("sheetName" in mapping) ||
+        typeof mapping.sheetName !== "string" ||
+        !mapping.sheetName.trim() ||
         !("numberCell" in mapping) ||
+        typeof mapping.numberCell !== "string" ||
+        !mapping.numberCell.trim() ||
         !("answerRange" in mapping) ||
+        typeof mapping.answerRange !== "string" ||
+        !mapping.answerRange.trim() ||
         !("answerAnchor" in mapping)
+        || typeof mapping.answerAnchor !== "string"
+        || !mapping.answerAnchor.trim()
+        || !("originalAnswer" in mapping)
+        || (mapping.originalAnswer !== null && typeof mapping.originalAnswer !== "string")
       ) {
         throw new Error("invalid");
       }

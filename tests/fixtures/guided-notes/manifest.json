@@ -8,7 +8,7 @@
     {
       "filename": "synthetic-single.xlsx",
       "kind": "valid",
-      "description": "合成單題版面與合併答案範圍"
+      "description": "合成單題版面、水平合併題目與合併答案範圍"
     },
     {
       "filename": "synthetic-moved-multiple.xlsx",
@@ -18,12 +18,12 @@
     {
       "filename": "synthetic-semantic-rich.xlsx",
       "kind": "valid",
-      "description": "多工作表、公式、格式、合併範圍、列高、欄寬及隱藏狀態"
+      "description": "多工作表、跨列富文字換行題目、公式結果題目、格式、合併範圍及隱藏狀態"
     },
     {
       "filename": "invalid-missing-header.xlsx",
       "kind": "invalid",
-      "description": "缺少作答表頭"
+      "description": "缺少題目表頭"
     },
     {
       "filename": "invalid-multiple-candidates.xlsx",
@@ -44,6 +44,21 @@
       "filename": "invalid-overlapping-answer.xlsx",
       "kind": "invalid",
       "description": "兩題映射至同一跨列合併答案範圍"
+    },
+    {
+      "filename": "invalid-blank-prompt.xlsx",
+      "kind": "invalid",
+      "description": "有效題號的題目文字只有空白與換行"
+    },
+    {
+      "filename": "invalid-shared-prompt-range.xlsx",
+      "kind": "invalid",
+      "description": "兩個題號落在同一跨列合併題目範圍"
+    },
+    {
+      "filename": "invalid-duplicate-prompt-header.xlsx",
+      "kind": "invalid",
+      "description": "同一表頭列包含兩個題目表頭而無法唯一定位"
     }
   ]
 }

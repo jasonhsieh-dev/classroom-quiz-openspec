@@ -14,6 +14,7 @@ import {
 import { initializeDatabase } from "./db/database.js";
 import { registerApplicationRoutes } from "./application-routes.js";
 import { GuidedNotesImportService } from "./guided-notes/import-service.js";
+import { backfillQuestionPrompts } from "./guided-notes/prompt-backfill.js";
 import { SessionService } from "./auth/session-auth.js";
 import {
   configureSocketServer,
@@ -27,6 +28,7 @@ export async function startServer(environment: NodeJS.ProcessEnv = process.env) 
   const database = initializeDatabase(
     join(runtimePaths.data, "classroom-quiz.sqlite"),
   );
+  await backfillQuestionPrompts(database);
   const guidedNotesImports = new GuidedNotesImportService(database, runtimePaths);
   await guidedNotesImports.cleanupExpired();
   const sessions = new SessionService(database);

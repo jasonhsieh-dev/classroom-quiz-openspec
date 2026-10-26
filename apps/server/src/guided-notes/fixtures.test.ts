@@ -67,6 +67,9 @@ describe("Guided Notes 合成 fixtures", () => {
       "參考資料",
     ]);
     expect(sheet.model.merges).toContain("H6:J6");
+    expect(sheet.model.merges).toContain("D6:G7");
+    expect(sheet.getCell("D6").text).toBe("合成富文字題目：特殊符號 <>&\n第二行");
+    expect(sheet.getCell("D9").text).toBe("合成公式題目結果");
     expect(sheet.getRow(5).height).toBe(28);
     expect(sheet.getRow(8).hidden).toBe(true);
     expect(sheet.getColumn(3).width).toBe(14);
@@ -80,5 +83,22 @@ describe("Guided Notes 合成 fixtures", () => {
     expect(reference.model.merges).toContain("A4:C4");
     expect(reference.getRow(4).height).toBe(31);
     expect(reference.getColumn(1).width).toBe(22);
+  });
+
+  it("fixtures 涵蓋三表頭、跨列題目及題目缺漏與歧義案例", async () => {
+    const valid = await loadGuidedNotesFixture("synthetic-semantic-rich.xlsx");
+    const sheet = valid.getWorksheet("學習單")!;
+    expect([sheet.getCell("C5").text, sheet.getCell("D5").text, sheet.getCell("H5").text]).toEqual([
+      "題號", "題目", "作答",
+    ]);
+
+    for (const filename of [
+      "invalid-missing-header.xlsx",
+      "invalid-blank-prompt.xlsx",
+      "invalid-shared-prompt-range.xlsx",
+      "invalid-duplicate-prompt-header.xlsx",
+    ]) {
+      expect((await loadGuidedNotesFixture(filename)).worksheets).toHaveLength(1);
+    }
   });
 });

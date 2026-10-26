@@ -87,6 +87,62 @@ describe("ActivityRepository", () => {
       "NOT_FOUND",
     );
   });
+
+  it("以最新優先列出 DRAFT/OPEN/CLOSED 摘要及正確題數", () => {
+    const { testDatabase, activities, questions } = createRepositories();
+    activities.create({
+      id: "draft", title: "草稿", sourceFilePath: "draft.xlsx",
+      sourceSha256: "draft-sha", createdAt: "2026-10-23T01:00:00.000Z",
+    });
+    activities.create({
+      id: "open", title: "進行中", sourceFilePath: "open.xlsx",
+      sourceSha256: "open-sha", createdAt: "2026-10-23T02:00:00.000Z",
+    });
+    activities.create({
+      id: "closed", title: "已結束", sourceFilePath: "closed.xlsx",
+      sourceSha256: "closed-sha", createdAt: "2026-10-23T03:00:00.000Z",
+    });
+    testDatabase.database.prepare(
+      "UPDATE activities SET state = 'OPEN', revision = 1, opened_at = ? WHERE id = 'open'",
+    ).run("2026-10-23T02:30:00.000Z");
+    testDatabase.database.prepare(
+      "UPDATE activities SET state = 'CLOSED', revision = 2, opened_at = ?, closed_at = ? WHERE id = 'closed'",
+    ).run("2026-10-23T03:30:00.000Z", "2026-10-23T04:00:00.000Z");
+    for (let index = 0; index < 2; index += 1) {
+      questions.create({
+        id: `closed-q${index + 1}`, activityId: "closed",
+        displayNumber: String(index + 1), sortOrder: index,
+        sheetName: "學習單", numberCell: `A${index + 2}`,
+        answerRange: `B${index + 2}`, answerAnchor: `B${index + 2}`,
+        originalAnswer: null,
+      });
+    }
+    questions.create({
+      id: "open-q1", activityId: "open", displayNumber: "1", sortOrder: 0,
+      sheetName: "學習單", numberCell: "A2", answerRange: "B2",
+      answerAnchor: "B2", originalAnswer: null,
+    });
+
+    expect(activities.listSummaries()).toEqual([
+      {
+        activityId: "closed", title: "已結束", state: "CLOSED", revision: 2,
+        createdAt: "2026-10-23T03:00:00.000Z",
+        openedAt: "2026-10-23T03:30:00.000Z",
+        closedAt: "2026-10-23T04:00:00.000Z", questionCount: 2,
+      },
+      {
+        activityId: "open", title: "進行中", state: "OPEN", revision: 1,
+        createdAt: "2026-10-23T02:00:00.000Z",
+        openedAt: "2026-10-23T02:30:00.000Z",
+        closedAt: null, questionCount: 1,
+      },
+      {
+        activityId: "draft", title: "草稿", state: "DRAFT", revision: 0,
+        createdAt: "2026-10-23T01:00:00.000Z",
+        openedAt: null, closedAt: null, questionCount: 0,
+      },
+    ]);
+  });
 });
 
 describe("GroupRepository", () => {
@@ -239,6 +295,8 @@ describe("QuestionRepository", () => {
       activityId: "activity-1",
       displayNumber: "1-1",
       sortOrder: 0,
+      promptText: "請比較兩種方法。",
+      promptRange: "C7:E7",
       sheetName: "工作表乙",
       numberCell: "B7",
       answerRange: "G7",
@@ -247,6 +305,10 @@ describe("QuestionRepository", () => {
     });
 
     expect(questions.listByActivity("activity-1")).toEqual([first, second]);
+    expect(first).toMatchObject({
+      promptText: "請比較兩種方法。",
+      promptRange: "C7:E7",
+    });
     expect(
       questions.updateMapping(first.id, {
         sheetName: "移動後",
@@ -256,6 +318,23 @@ describe("QuestionRepository", () => {
         originalAnswer: "更新內容",
       }),
     ).toMatchObject({
+      sheetName: "移動後",
+      numberCell: "J21",
+      answerRange: "L21:N21",
+      answerAnchor: "L21",
+      originalAnswer: "更新內容",
+      promptText: "請比較兩種方法。",
+      promptRange: "C7:E7",
+    });
+    expect(
+      questions.updateMetadata(first.id, {
+        promptText: "更新後的完整題目",
+        promptRange: "C7:F8",
+      }),
+    ).toEqual({
+      ...first,
+      promptText: "更新後的完整題目",
+      promptRange: "C7:F8",
       sheetName: "移動後",
       numberCell: "J21",
       answerRange: "L21:N21",
@@ -312,6 +391,13 @@ describe("QuestionRepository", () => {
           answerAnchor: "B3",
           originalAnswer: null,
         }),
+      "NOT_FOUND",
+    );
+    expectRepositoryCode(
+      () => questions.updateMetadata("missing", {
+        promptText: "不存在",
+        promptRange: "C3",
+      }),
       "NOT_FOUND",
     );
   });

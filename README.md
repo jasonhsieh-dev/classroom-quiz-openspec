@@ -2,6 +2,8 @@
 
 這是軟體工程期末專題的本機 Demo。老師匯入由 Google Sheets 下載的 Guided Notes `.xlsx`，建立組別並一次開放全部題目；學生選組後可自由選題、提交及修改。活動截止後，系統依各組每題最後有效提交的伺服器接收序號排名，並把第一名答案回填至原學習單副本。
 
+目前老師端與學生端都只顯示題號。系統依「題號」與「作答」表頭動態辨識題目及答案位置，但不解析、儲存或顯示 Excel 中的題目文字。匯出以匯入時保存的原始活頁簿副本為基礎，只回填成功題目的答案，因此原始題目文字及其他非目標內容會保留。
+
 ## 環境需求
 
 - Node.js 22 以上（驗證版本：24.22.0）
@@ -19,6 +21,18 @@ npx playwright install chromium
 ```
 
 `npm ci` 依 `package-lock.json` 重現依賴。測試 XLSX 位於 `tests/fixtures/`，全部是合成資料。
+
+### Windows PowerShell
+
+若 PowerShell 因 Execution Policy 阻擋 `npm.ps1`，不需要也不建議為本專案修改系統安全設定；請直接使用 Windows 的命令包裝檔：
+
+```powershell
+npm.cmd ci
+npx.cmd playwright install chromium
+npm.cmd run dev
+```
+
+其他 npm 指令也可用相同方式將 `npm` 改為 `npm.cmd`。
 
 ## 環境設定與資料庫
 
@@ -39,9 +53,11 @@ npx playwright install chromium
 npm run dev
 ```
 
-- 老師端：<http://127.0.0.1:5173/>
-- 學生端：<http://127.0.0.1:5173/student>
+- 老師端：<http://localhost:5173/>
+- 學生端：<http://localhost:5173/student>
 - 健康檢查：<http://127.0.0.1:3000/api/health>
+
+Vite 開發伺服器預設會在終端顯示 `localhost:5173`，日常操作請以該終端實際顯示的 Local URL 為準；Express／Socket.IO 後端則只監聽 `127.0.0.1:3000`。自動化端對端測試已驗證的瀏覽器網址是 <http://127.0.0.1:4173/>，但該網址只會在 `npm run test:e2e` 執行期間由 Playwright 專用伺服器提供，不是一般 Demo 的啟動網址。
 
 健康檢查應回傳 `{"status":"ok","service":"classroom-buzzer-server"}`。按 `Ctrl+C` 停止前後端。執行期資料都在 Git 忽略的 `var/`；要重新展示可先停止服務，再自行備份並移除所需的 `var/` 子目錄。
 
@@ -55,6 +71,10 @@ npm run dev
 6. 老師下載回填後的 Guided Notes，新檔不會覆蓋來源檔。
 
 完整逐步通過條件請見 [人工驗收清單](docs/manual-acceptance.md)。
+
+### 已知操作限制
+
+老師頁面目前將正在操作的活動識別碼保存在瀏覽器頁面狀態中；活動建立後若重新整理老師頁面，介面會回到匯入入口，無法自動恢復到該活動的管理或結果畫面。活動、題目、組別、提交與截止結果仍保存在 SQLite，不會因重新整理而遺失。展示期間請避免重新整理老師頁面；這是介面恢復能力的限制，不是資料庫資料被刪除。
 
 ## 測試與檢查
 
@@ -72,8 +92,10 @@ npm test
 npm run test:e2e
 npm run typecheck
 npm run build
-openspec validate build-classroom-buzzer --strict
+openspec validate --specs --strict
 ```
+
+原 `build-classroom-buzzer` Change 已封存於 `openspec/changes/archive/2026-10-26-build-classroom-buzzer/`；目前應驗證已同步至 `openspec/specs/` 的主規格，因此不再使用針對 active Change 的舊驗證指令。
 
 Playwright 使用 `var/e2e/` 隔離資料庫、上傳與匯出檔，啟動時會清除此專用目錄，不接觸日常 Demo 資料。
 

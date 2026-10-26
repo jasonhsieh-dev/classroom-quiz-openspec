@@ -54,9 +54,9 @@ describe("老師 Guided Notes 匯入 API", () => {
       filename: "課堂學習單.xlsx",
       questionCount: 3,
       questions: [
-        { displayNumber: "1-1", answerRange: "J7:L7" },
-        { displayNumber: "A1", willOverwrite: true },
-        { displayNumber: "章末-3" },
+        { displayNumber: "1-1", promptText: "合成題目 1-1", promptRange: "E7:I7", answerRange: "J7:L7" },
+        { displayNumber: "A1", promptText: "合成題目 A1", promptRange: "E10:I10", willOverwrite: true },
+        { displayNumber: "章末-3", promptText: "合成題目 章末-3", promptRange: "E12:I12" },
       ],
     });
     expect(
@@ -119,7 +119,7 @@ describe("老師 Guided Notes 匯入 API", () => {
     expect(invalid.body).toMatchObject({
       error: {
         code: "HEADER_NOT_FOUND",
-        message: "找不到同一列中的「題號」與「作答」表頭。",
+        message: "找不到同一列中的「題號」、「題目」與「作答」表頭。",
       },
     });
     expect(

@@ -138,7 +138,91 @@ describe("SQLite 初始化與 migrations", () => {
       { filename: "001_initial.sql" },
       { filename: "002_import_drafts.sql" },
       { filename: "003_global_teacher_sessions.sql" },
+      { filename: "004_question_prompts.sql" },
     ]);
+  });
+
+  it("由既有 schema 新增 nullable 題目欄位且完整保留活動關聯資料", () => {
+    const directory = mkdtempSync(join(tmpdir(), "classroom-buzzer-prompts-"));
+    legacyDirectories.push(directory);
+    const filename = join(directory, "legacy.sqlite");
+    const legacy = new Database(filename);
+    legacy.pragma("foreign_keys = ON");
+    for (const migration of [
+      "001_initial.sql",
+      "002_import_drafts.sql",
+      "003_global_teacher_sessions.sql",
+    ]) {
+      legacy.exec(
+        readFileSync(new URL(`./migrations/${migration}`, import.meta.url), "utf8"),
+      );
+    }
+    legacy.exec(`
+      CREATE TABLE schema_migrations (
+        filename TEXT PRIMARY KEY,
+        applied_at TEXT NOT NULL
+      );
+      INSERT INTO schema_migrations VALUES
+        ('001_initial.sql', '2026-10-23T00:00:00.000Z'),
+        ('002_import_drafts.sql', '2026-10-23T00:01:00.000Z'),
+        ('003_global_teacher_sessions.sql', '2026-10-23T00:02:00.000Z');
+    `);
+    const now = "2026-10-23T01:00:00.000Z";
+    legacy.prepare(
+      `INSERT INTO activities (
+        id, title, state, revision, source_file_path, source_sha256,
+        opened_at, closed_at, created_at
+      ) VALUES (?, ?, 'CLOSED', 2, ?, ?, ?, ?, ?)`,
+    ).run("activity-1", "既有活動", "source.xlsx", "sha256", now, now, now);
+    legacy.prepare(
+      "INSERT INTO groups (id, activity_id, name, normalized_name, created_at) VALUES (?, ?, ?, ?, ?)",
+    ).run("group-1", "activity-1", "第一組", "第一組", now);
+    legacy.prepare(
+      `INSERT INTO questions (
+        id, activity_id, display_number, sort_order, sheet_name,
+        number_cell, answer_range, answer_anchor, original_answer
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run("question-1", "activity-1", "1", 0, "學習單", "A2", "C2:D2", "C2", "原答案");
+    legacy.prepare(
+      "INSERT INTO sessions (id, role, activity_id, group_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run("student-session", "student", "activity-1", "group-1", now, "2026-10-24T01:00:00.000Z");
+    const attempt = legacy.prepare(
+      `INSERT INTO submission_attempts (
+        activity_id, question_id, group_id, session_id, answer,
+        server_received_at, receive_sequence, idempotency_key
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run("activity-1", "question-1", "group-1", "student-session", "作答", now, 1, "key-1");
+    legacy.prepare(
+      "INSERT INTO current_submissions (activity_id, question_id, group_id, attempt_id) VALUES (?, ?, ?, ?)",
+    ).run("activity-1", "question-1", "group-1", attempt.lastInsertRowid);
+    legacy.prepare(
+      "INSERT INTO result_entries (activity_id, question_id, group_id, attempt_id, rank) VALUES (?, ?, ?, ?, ?)",
+    ).run("activity-1", "question-1", "group-1", attempt.lastInsertRowid, 1);
+    legacy.close();
+
+    const migrated = initializeDatabase(filename);
+    const columns = migrated
+      .prepare("PRAGMA table_info(questions)")
+      .all()
+      .map((row) => (row as { name: string }).name);
+    expect(columns).toEqual(expect.arrayContaining(["prompt_text", "prompt_range"]));
+    expect(migrated.prepare(
+      `SELECT id, activity_id, display_number, sheet_name, number_cell,
+              answer_range, answer_anchor, original_answer, prompt_text, prompt_range
+       FROM questions`,
+    ).get()).toEqual({
+      id: "question-1", activity_id: "activity-1", display_number: "1",
+      sheet_name: "學習單", number_cell: "A2", answer_range: "C2:D2",
+      answer_anchor: "C2", original_answer: "原答案",
+      prompt_text: null, prompt_range: null,
+    });
+    for (const table of [
+      "activities", "groups", "sessions", "submission_attempts",
+      "current_submissions", "result_entries",
+    ]) {
+      expect((migrated.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count).toBe(1);
+    }
+    migrated.close();
   });
 
   it("啟用 foreign keys、WAL 與 busy timeout", () => {

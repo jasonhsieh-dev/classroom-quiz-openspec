@@ -52,6 +52,10 @@ describe("Guided Notes 結果匯出", () => {
       expected.getWorksheet(mappings[0]!.sheetName)!.getCell(mappings[0]!.answerAnchor).value = "成功答案";
       const actual = new ExcelJS.Workbook(); await actual.xlsx.readFile(result.outputPath);
       expect(compareWorkbookSemantics(captureWorkbookSemantics(expected), captureWorkbookSemantics(actual))).toEqual([]);
+      for (const mapping of mappings) {
+        const promptAnchor = mapping.promptRange.split(":")[0]!;
+        expect(actual.getWorksheet(mapping.sheetName)!.getCell(promptAnchor).text).toBe(mapping.promptText);
+      }
       for (const unanswered of mappings.slice(1)) {
         expect(actual.getWorksheet(unanswered.sheetName)!.getCell(unanswered.answerAnchor).text).toBe(unanswered.originalAnswer ?? "");
       }

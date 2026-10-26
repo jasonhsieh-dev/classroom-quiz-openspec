@@ -69,6 +69,9 @@ export const QuestionSummarySchema = z
   .object({
     id: z.string().min(1),
     displayNumber: z.string().min(1),
+    // Transitional until snapshot/result producers are migrated in their
+    // dedicated phases; new payloads can carry it without breaking legacy DTOs.
+    promptText: z.string().min(1).optional(),
     sortOrder: z.number().int().nonnegative(),
   })
   .strict();
@@ -98,6 +101,7 @@ export const StudentVisibleSubmissionSchema = z.object({
 }).strict();
 
 export const TeacherActivitySnapshotSchema = ActivitySnapshotSchema.extend({
+  title: z.string().min(1).optional(),
   role: z.literal("teacher"),
   groups: z.array(GroupSummarySchema),
   submissions: z.array(TeacherVisibleSubmissionSchema),
@@ -172,6 +176,8 @@ export type StudentActivityResults = z.infer<typeof StudentActivityResultsSchema
 export const GuidedNotesPreviewQuestionSchema = z
   .object({
     displayNumber: z.string().min(1),
+    promptText: z.string().min(1),
+    promptRange: z.string().min(1),
     sheetName: z.string().min(1),
     numberCell: z.string().min(1),
     answerRange: z.string().min(1),
@@ -204,6 +210,40 @@ export const ConfirmImportResponseSchema = z
   })
   .strict();
 export type ConfirmImportResponse = z.infer<typeof ConfirmImportResponseSchema>;
+
+export const ActivitySummarySchema = z
+  .object({
+    activityId: z.string().min(1),
+    title: z.string().min(1),
+    state: ActivityStateSchema,
+    revision: z.number().int().nonnegative(),
+    createdAt: z.string().datetime(),
+    openedAt: z.string().datetime().nullable(),
+    closedAt: z.string().datetime().nullable(),
+    questionCount: z.number().int().nonnegative(),
+  })
+  .strict();
+export type ActivitySummary = z.infer<typeof ActivitySummarySchema>;
+
+export const ActivitySummaryListResponseSchema = z
+  .object({ activities: z.array(ActivitySummarySchema) })
+  .strict();
+export type ActivitySummaryListResponse = z.infer<
+  typeof ActivitySummaryListResponseSchema
+>;
+
+export const CloseActivityResponseSchema = z
+  .object({
+    activityId: z.string().min(1),
+    state: z.literal("CLOSED"),
+    revision: z.number().int().positive(),
+    closedAt: z.string().datetime(),
+    resultCount: z.number().int().nonnegative(),
+  })
+  .strict();
+export type CloseActivityResponse = z.infer<
+  typeof CloseActivityResponseSchema
+>;
 
 const ActivityStateEventSchema = z
   .object({

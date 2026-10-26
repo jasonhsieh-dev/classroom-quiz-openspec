@@ -49,6 +49,8 @@ const preview = {
   questions: [
     {
       displayNumber: "1-1",
+      promptText: "這是一段很長的合成完整題目，必須在匯入預覽中完整顯示。\n第二行保留換行與特殊符號 <>&。",
+      promptRange: "E7:I8",
       sheetName: "學習單",
       numberCell: "D7",
       answerRange: "J7:L7",
@@ -58,6 +60,8 @@ const preview = {
     },
     {
       displayNumber: "A1",
+      promptText: "第二道合成題目",
+      promptRange: "E10:I10",
       sheetName: "學習單",
       numberCell: "D10",
       answerRange: "J10:L10",
@@ -175,7 +179,7 @@ describe("老師 Guided Notes 匯入介面", () => {
     expect(JSON.stringify(safeResults)).not.toContain("rankings");
   });
 
-  it("顯示題數、題號、工作表、答案範圍與原內容警告，確認後顯示 DRAFT 活動", async () => {
+  it("顯示題數、題號、完整長題目、工作表、答案範圍與原內容警告，確認後顯示 DRAFT 活動", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(teacherSessionResponse())
@@ -197,6 +201,13 @@ describe("老師 Guided Notes 匯入介面", () => {
     await uploadFile(user);
     expect(await screen.findByText("共 2 題")).toBeInTheDocument();
     expect(screen.getByText("1-1")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "完整題目" })).toBeInTheDocument();
+    const prompt = screen.getByText((_, element) => Boolean(
+      element?.classList.contains("prompt-text")
+      && (element.textContent ?? "").includes("第二行保留換行與特殊符號 <>&。"),
+    ));
+    expect(prompt).toHaveTextContent("這是一段很長的合成完整題目");
+    expect(prompt).toHaveClass("prompt-text");
     expect(screen.getAllByText("學習單")).toHaveLength(2);
     expect(screen.getByText("J10:L10")).toBeInTheDocument();
     expect(
@@ -501,7 +512,7 @@ describe("老師 Guided Notes 匯入介面", () => {
         .mockResolvedValueOnce(response(false, {
           error: {
             code: "HEADER_NOT_FOUND",
-            message: "找不到同一列中的「題號」與「作答」表頭。",
+            message: "找不到同一列中的「題號」、「題目」與「作答」表頭。",
           },
         })),
     );
@@ -512,7 +523,7 @@ describe("老師 Guided Notes 匯入介面", () => {
 
     await uploadFile(user);
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "找不到同一列中的「題號」與「作答」表頭。",
+      "找不到同一列中的「題號」、「題目」與「作答」表頭。",
     );
     expect(screen.getByRole("button", { name: "上傳並預覽" })).toBeEnabled();
   });

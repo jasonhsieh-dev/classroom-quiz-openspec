@@ -565,6 +565,7 @@ function TeacherApp() {
               <thead>
                 <tr>
                   <th scope="col">題號</th>
+                  <th scope="col">完整題目</th>
                   <th scope="col">工作表</th>
                   <th scope="col">答案範圍</th>
                   <th scope="col">原內容</th>
@@ -574,6 +575,7 @@ function TeacherApp() {
                 {preview.questions.map((question) => (
                   <tr key={`${question.sheetName}:${question.numberCell}`}>
                     <td>{question.displayNumber}</td>
+                    <td className="prompt-text">{question.promptText}</td>
                     <td>{question.sheetName}</td>
                     <td>
                       <code>{question.answerRange}</code>
@@ -594,7 +596,7 @@ function TeacherApp() {
           </div>
 
           <p className="preview-note">
-            請確認題號與答案範圍正確。按下確認後才會保存原始檔並建立 DRAFT 活動。
+            請確認題號、完整題目與答案範圍正確。按下確認後才會保存原始檔並建立 DRAFT 活動。
           </p>
           <div className="actions">
             <button className="secondary" type="button" onClick={cancel} disabled={busy}>
@@ -619,7 +621,7 @@ function TeacherApp() {
               }}
               disabled={busy}
             />
-            <small>僅接受 .xlsx；系統會依「題號」及「作答」表頭動態辨識。</small>
+            <small>僅接受 .xlsx；系統會依「題號」、「題目」及「作答」表頭動態辨識。</small>
           </label>
           {file && <p className="selected-file">已選擇：{file.name}</p>}
           <button type="submit" disabled={busy}>

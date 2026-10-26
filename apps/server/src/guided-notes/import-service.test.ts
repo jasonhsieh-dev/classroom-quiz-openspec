@@ -45,6 +45,23 @@ async function expectMissing(path: string): Promise<void> {
 }
 
 describe("GuidedNotesImportService", () => {
+  it.each([
+    ["invalid-missing-header.xlsx", "HEADER_NOT_FOUND"],
+    ["invalid-duplicate-prompt-header.xlsx", "HEADER_AMBIGUOUS"],
+    ["invalid-blank-prompt.xlsx", "INVALID_PROMPT"],
+    ["invalid-shared-prompt-range.xlsx", "AMBIGUOUS_PROMPT_MAPPING"],
+  ])("拒絕無效題目來源 %s，且不建立 draft 或部分 mapping", async (fixture, code) => {
+    const { service, testDatabase } = setup();
+    await expect(service.createDraft({
+      filename: fixture,
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      buffer: await readGuidedNotesFixture(fixture),
+    })).rejects.toMatchObject({ code });
+    expect(testDatabase.database.prepare("SELECT COUNT(*) count FROM import_drafts").get()).toEqual({ count: 0 });
+    expect(testDatabase.database.prepare("SELECT COUNT(*) count FROM activities").get()).toEqual({ count: 0 });
+    expect(testDatabase.database.prepare("SELECT COUNT(*) count FROM questions").get()).toEqual({ count: 0 });
+  });
+
   it("上傳只建立 draft，確認後才原子建立活動、題目 mapping 並保存原始檔", async () => {
     const ids = [
       "draft-1",
@@ -61,9 +78,9 @@ describe("GuidedNotesImportService", () => {
       importId: "draft-1",
       questionCount: 3,
       questions: [
-        { displayNumber: "1-1", answerRange: "J7:L7" },
-        { displayNumber: "A1", answerRange: "J10:L10", willOverwrite: true },
-        { displayNumber: "章末-3", answerRange: "J12:L12" },
+        { displayNumber: "1-1", promptText: "合成題目 1-1", promptRange: "E7:I7", answerRange: "J7:L7" },
+        { displayNumber: "A1", promptText: "合成題目 A1", promptRange: "E10:I10", answerRange: "J10:L10", willOverwrite: true },
+        { displayNumber: "章末-3", promptText: "合成題目 章末-3", promptRange: "E12:I12", answerRange: "J12:L12" },
       ],
     });
     expect(
@@ -91,7 +108,8 @@ describe("GuidedNotesImportService", () => {
     expect(
       testDatabase.database
         .prepare(
-          `SELECT display_number, sheet_name, number_cell, answer_range,
+          `SELECT display_number, prompt_text, prompt_range,
+                  sheet_name, number_cell, answer_range,
                   answer_anchor, original_answer
            FROM questions ORDER BY sort_order`,
         )
@@ -99,6 +117,8 @@ describe("GuidedNotesImportService", () => {
     ).toEqual([
       {
         display_number: "1-1",
+        prompt_text: "合成題目 1-1",
+        prompt_range: "E7:I7",
         sheet_name: "變形學習單",
         number_cell: "D7",
         answer_range: "J7:L7",
@@ -107,6 +127,8 @@ describe("GuidedNotesImportService", () => {
       },
       {
         display_number: "A1",
+        prompt_text: "合成題目 A1",
+        prompt_range: "E10:I10",
         sheet_name: "變形學習單",
         number_cell: "D10",
         answer_range: "J10:L10",
@@ -115,6 +137,8 @@ describe("GuidedNotesImportService", () => {
       },
       {
         display_number: "章末-3",
+        prompt_text: "合成題目 章末-3",
+        prompt_range: "E12:I12",
         sheet_name: "變形學習單",
         number_cell: "D12",
         answer_range: "J12:L12",
@@ -125,6 +149,25 @@ describe("GuidedNotesImportService", () => {
     expect(
       testDatabase.database.prepare("SELECT COUNT(*) count FROM import_drafts").get(),
     ).toEqual({ count: 0 });
+  });
+
+  it("確認時拒絕缺少題目 metadata 的損壞 draft，且不建立活動", async () => {
+    const ids = ["draft-corrupt"];
+    const { service, testDatabase } = setup({ idFactory: () => ids.shift()! });
+    const preview = await createValidDraft(service);
+    const mapping = JSON.parse((testDatabase.database.prepare(
+      "SELECT mapping_json FROM import_drafts WHERE id = ?",
+    ).get(preview.importId) as { mapping_json: string }).mapping_json) as Array<Record<string, unknown>>;
+    delete mapping[0]!.promptText;
+    testDatabase.database.prepare(
+      "UPDATE import_drafts SET mapping_json = ? WHERE id = ?",
+    ).run(JSON.stringify(mapping), preview.importId);
+
+    await expect(service.confirmDraft(preview.importId)).rejects.toMatchObject({
+      code: "IMPORT_DRAFT_CORRUPT",
+    });
+    expect(testDatabase.database.prepare("SELECT COUNT(*) count FROM activities").get()).toEqual({ count: 0 });
+    expect(testDatabase.database.prepare("SELECT COUNT(*) count FROM questions").get()).toEqual({ count: 0 });
   });
 
   it("取消與過期清理會移除暫存檔，且完全不建立活動", async () => {

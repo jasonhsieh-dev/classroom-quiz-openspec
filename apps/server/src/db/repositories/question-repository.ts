@@ -9,6 +9,8 @@ export interface QuestionRecord {
   activityId: string;
   displayNumber: string;
   sortOrder: number;
+  promptText: string | null;
+  promptRange: string | null;
   sheetName: string;
   numberCell: string;
   answerRange: string;
@@ -21,6 +23,8 @@ interface QuestionRow {
   activity_id: string;
   display_number: string;
   sort_order: number;
+  prompt_text: string | null;
+  prompt_range: string | null;
   sheet_name: string;
   number_cell: string;
   answer_range: string;
@@ -33,6 +37,8 @@ export interface CreateQuestionInput {
   activityId: string;
   displayNumber: string;
   sortOrder: number;
+  promptText?: string | null;
+  promptRange?: string | null;
   sheetName: string;
   numberCell: string;
   answerRange: string;
@@ -48,12 +54,19 @@ export interface UpdateQuestionMappingInput {
   originalAnswer: string | null;
 }
 
+export interface UpdateQuestionMetadataInput {
+  promptText: string | null;
+  promptRange: string | null;
+}
+
 function toQuestionRecord(row: QuestionRow): QuestionRecord {
   return {
     id: row.id,
     activityId: row.activity_id,
     displayNumber: row.display_number,
     sortOrder: row.sort_order,
+    promptText: row.prompt_text,
+    promptRange: row.prompt_range,
     sheetName: row.sheet_name,
     numberCell: row.number_cell,
     answerRange: row.answer_range,
@@ -70,15 +83,18 @@ export class QuestionRepository {
       this.database
         .prepare(
           `INSERT INTO questions (
-            id, activity_id, display_number, sort_order, sheet_name,
-            number_cell, answer_range, answer_anchor, original_answer
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            id, activity_id, display_number, sort_order, prompt_text,
+            prompt_range, sheet_name, number_cell, answer_range,
+            answer_anchor, original_answer
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           input.id,
           input.activityId,
           input.displayNumber,
           input.sortOrder,
+          input.promptText ?? null,
+          input.promptRange ?? null,
           input.sheetName,
           input.numberCell,
           input.answerRange,
@@ -136,6 +152,26 @@ export class QuestionRepository {
           input.originalAnswer,
           id,
         );
+      if (result.changes === 0) throw entityNotFound("題目", id);
+      return this.getById(id);
+    } catch (error) {
+      rethrowRepositoryError(error, "題目");
+    }
+  }
+
+
+  updateMetadata(
+    id: string,
+    input: UpdateQuestionMetadataInput,
+  ): QuestionRecord {
+    try {
+      const result = this.database
+        .prepare(
+          `UPDATE questions
+           SET prompt_text = ?, prompt_range = ?
+           WHERE id = ?`,
+        )
+        .run(input.promptText, input.promptRange, id);
       if (result.changes === 0) throw entityNotFound("題目", id);
       return this.getById(id);
     } catch (error) {

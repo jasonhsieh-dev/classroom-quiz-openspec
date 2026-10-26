@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   ActivitySnapshotSchema,
+  ActivitySummaryListResponseSchema,
   ApiErrorSchema,
+  CloseActivityResponseSchema,
   ConfirmImportResponseSchema,
   ImportDraftPreviewSchema,
   RoleSchema,
@@ -21,7 +23,7 @@ describe("共用契約", () => {
         activityId: "activity-1",
         state: "DRAFT",
         revision: 0,
-        questions: [{ id: "question-1", displayNumber: "1-1", sortOrder: 0 }],
+        questions: [{ id: "question-1", displayNumber: "1-1", promptText: "完整題目", sortOrder: 0 }],
       }),
     ).toMatchObject({ activityId: "activity-1", state: "DRAFT" });
 
@@ -64,6 +66,8 @@ describe("共用契約", () => {
         questions: [
           {
             displayNumber: "A1",
+            promptText: "請說明 A1 的概念。",
+            promptRange: "E7:I7",
             sheetName: "學習單",
             numberCell: "D7",
             answerRange: "J7:L7",
@@ -105,10 +109,10 @@ describe("共用契約", () => {
   it("以 strict DTO 區分老師完整資料與學生本組資料", () => {
     const base = {
       activityId: "activity-1", state: "OPEN" as const, revision: 2,
-      questions: [{ id: "q1", displayNumber: "1", sortOrder: 0 }],
+      questions: [{ id: "q1", displayNumber: "1", promptText: "第一題完整題目", sortOrder: 0 }],
     };
     expect(TeacherActivitySnapshotSchema.parse({
-      ...base, role: "teacher", groups: [{ id: "g1", name: "第一組" }],
+      ...base, title: "測試活動", role: "teacher", groups: [{ id: "g1", name: "第一組" }],
       submissions: [{ questionId: "q1", groupId: "g1", answer: "答案", serverReceivedAt: "2026-10-24T02:00:00.000Z" }],
       results: null,
     }).submissions[0]).toHaveProperty("groupId", "g1");
@@ -124,7 +128,7 @@ describe("共用契約", () => {
   });
 
   it("以獨立結果 DTO 在後端裁切老師與學生欄位", () => {
-    const question = { id: "q1", displayNumber: "1", sortOrder: 0 };
+    const question = { id: "q1", displayNumber: "1", promptText: "第一題完整題目", sortOrder: 0 };
     const winner = { id: "g2", name: "第二組" };
     expect(TeacherActivityResultsSchema.parse({
       activityId: "a1", revision: 5, closedAt: "2026-10-24T03:00:00.000Z",
@@ -154,5 +158,44 @@ describe("共用契約", () => {
       receiveSequence: 7,
       groupId: "g1",
     }).success).toBe(false);
+  });
+
+  it("驗證活動摘要與 close 權威回應，並拒絕缺少必要欄位", () => {
+    const summaries = ActivitySummaryListResponseSchema.parse({
+      activities: [{
+        activityId: "a1", title: "活動一", state: "CLOSED", revision: 4,
+        createdAt: "2026-10-24T01:00:00.000Z",
+        openedAt: "2026-10-24T02:00:00.000Z",
+        closedAt: "2026-10-24T03:00:00.000Z", questionCount: 3,
+      }],
+    });
+    expect(summaries.activities[0]).toMatchObject({ activityId: "a1", questionCount: 3 });
+
+    expect(CloseActivityResponseSchema.parse({
+      activityId: "a1", state: "CLOSED", revision: 4,
+      closedAt: "2026-10-24T03:00:00.000Z", resultCount: 3,
+    })).toMatchObject({ state: "CLOSED", revision: 4 });
+
+    expect(ActivitySummaryListResponseSchema.safeParse({
+      activities: [{ activityId: "a1", title: "活動一", state: "DRAFT", revision: 0 }],
+    }).success).toBe(false);
+    expect(CloseActivityResponseSchema.safeParse({
+      activityId: "a1", state: "CLOSED", revision: 1,
+      closedAt: "2026-10-24T03:00:00.000Z",
+    }).success).toBe(false);
+  });
+
+  it("學生結果只允許公開題目、成功組別與自己組別結果", () => {
+    const payload = {
+      activityId: "a1", revision: 5, closedAt: "2026-10-24T03:00:00.000Z",
+      group: { id: "g1", name: "第一組" },
+      questions: [{
+        question: { id: "q1", displayNumber: "1", promptText: "完整題目", sortOrder: 0 },
+        winner: { id: "g2", name: "第二組" },
+        ownResult: { status: "NOT_ANSWERED" },
+        otherGroupAnswer: "不可公開",
+      }],
+    };
+    expect(StudentActivityResultsSchema.safeParse(payload).success).toBe(false);
   });
 });
