@@ -94,7 +94,7 @@ export class GroupRepository {
     return (
       this.database
         .prepare(
-          "SELECT * FROM groups WHERE activity_id = ? ORDER BY created_at, id",
+          "SELECT * FROM groups WHERE activity_id = ? ORDER BY created_at, rowid",
         )
         .all(activityId) as GroupRow[]
     ).map(toGroupRecord);
@@ -119,6 +119,14 @@ export class GroupRepository {
     try {
       const result = this.database.prepare("DELETE FROM groups WHERE id = ?").run(id);
       if (result.changes === 0) throw entityNotFound("組別", id);
+    } catch (error) {
+      rethrowRepositoryError(error, "組別");
+    }
+  }
+
+  deleteByActivity(activityId: string): void {
+    try {
+      this.database.prepare("DELETE FROM groups WHERE activity_id = ?").run(activityId);
     } catch (error) {
       rethrowRepositoryError(error, "組別");
     }

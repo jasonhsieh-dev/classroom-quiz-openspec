@@ -47,7 +47,7 @@ function setup(): TestDatabase {
   const questions = new QuestionRepository(testDatabase.database);
   for (const [index, id] of ["q1", "q2", "q3"].entries()) {
     questions.create({
-      id, activityId: "a1", displayNumber: id, sortOrder: index, sheetName: "學習單",
+      id, activityId: "a1", displayNumber: id, promptText: `完整題目 ${id}`, promptRange: `C${index + 2}`, sortOrder: index, sheetName: "學習單",
       numberCell: `A${index + 2}`, answerRange: `B${index + 2}`, answerAnchor: `B${index + 2}`, originalAnswer: null,
     });
   }

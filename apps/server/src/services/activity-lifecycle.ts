@@ -28,7 +28,7 @@ export class ActivityLifecycleService {
         const questions = this.questions.listByActivity(activityId);
         const missing: string[] = [];
         if (questions.length === 0) missing.push("至少一題");
-        if (this.groups.listByActivity(activityId).length === 0) missing.push("至少一個組別");
+        if (this.groups.listByActivity(activityId).length < 2) missing.push("至少兩個組別");
         if (
           questions.some((question) =>
             [question.sheetName, question.numberCell, question.answerRange, question.answerAnchor]

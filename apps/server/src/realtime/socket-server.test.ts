@@ -8,7 +8,7 @@ import request from "supertest";
 import type { ClientToServerEvents, ServerToClientEvents } from "@classroom-buzzer/shared";
 import { createApp } from "../app.js";
 import { registerApplicationRoutes } from "../application-routes.js";
-import { SESSION_COOKIE_NAME, SessionService } from "../auth/session-auth.js";
+import { STUDENT_SESSION_COOKIE_NAME, TEACHER_SESSION_COOKIE_NAME, SessionService } from "../auth/session-auth.js";
 import { createTestDatabase } from "../db/test-database.js";
 import { ActivityRepository, GroupRepository, QuestionRepository, SessionRepository } from "../db/repositories/index.js";
 import {
@@ -21,8 +21,8 @@ const time = "2026-10-24T02:00:00.000Z";
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
 
-function cookie(id: string): string {
-  return `${SESSION_COOKIE_NAME}=${id}`;
+function cookie(id: string, role: "teacher" | "student" = "student"): string {
+  return `${role === "teacher" ? TEACHER_SESSION_COOKIE_NAME : STUDENT_SESSION_COOKIE_NAME}=${id}`;
 }
 
 async function setup() {
@@ -69,12 +69,19 @@ async function setup() {
   return { app, url, clients, testDatabase };
 }
 
-function client(url: string, clients: ClientSocket[], sessionId: string | null, activityId: string, extraAuth: Record<string, unknown> = {}): ClientSocket {
+function client(
+  url: string,
+  clients: ClientSocket[],
+  cookieHeader: string | null,
+  activityId: string,
+  usage: "teacher" | "student" = "student",
+  extraAuth: Record<string, unknown> = {},
+): ClientSocket {
   const socket = createClient(url, {
     autoConnect: false,
     transports: ["websocket"],
-    auth: { activityId, ...extraAuth },
-    ...(sessionId ? { extraHeaders: { Cookie: cookie(sessionId) } } : {}),
+    auth: { activityId, usage, ...extraAuth },
+    ...(cookieHeader ? { extraHeaders: { Cookie: cookieHeader } } : {}),
   });
   clients.push(socket);
   return socket;
@@ -107,18 +114,49 @@ describe("Socket.IO session、room 與事件裁切", () => {
   it("handshake 拒絕缺少、過期與跨活動 session，且客戶端無法宣告老師 room", async () => {
     const { url, clients } = await setup();
     await expect(connectError(client(url, clients, null, "a1"))).resolves.toMatchObject({ data: { code: "SESSION_REQUIRED" } });
-    await expect(connectError(client(url, clients, "expired", "a1"))).resolves.toMatchObject({ data: { code: "SESSION_EXPIRED" } });
-    await expect(connectError(client(url, clients, "s1", "a2"))).resolves.toMatchObject({ data: { code: "ACTIVITY_SCOPE_FORBIDDEN" } });
-    const student = client(url, clients, "s1", "a1", { role: "teacher", room: "activity:a1:teacher", groupId: "a1-g2" });
+    await expect(connectError(client(url, clients, cookie("expired"), "a1"))).resolves.toMatchObject({ data: { code: "SESSION_EXPIRED" } });
+    await expect(connectError(client(url, clients, cookie("s1"), "a2"))).resolves.toMatchObject({ data: { code: "ACTIVITY_SCOPE_FORBIDDEN" } });
+    const student = client(url, clients, cookie("s1"), "a1", "student", { role: "teacher", room: "activity:a1:teacher", groupId: "a1-g2" });
     await connect(student);
     await expect(new Promise<{ ready: true }>((resolve) => student.emit("connection.ready", resolve))).resolves.toEqual({ ready: true });
   });
 
+  it("同一份雙 cookie header 依 usage 建立隔離的老師與學生 room，並拒絕偽造角色及跨活動", async () => {
+    const { app, url, clients } = await setup();
+    const dualCookies = `${cookie("teacher", "teacher")}; ${cookie("s1")}`;
+    const teacher = client(url, clients, dualCookies, "a1", "teacher");
+    const student = client(url, clients, dualCookies, "a1", "student");
+    await Promise.all([connect(teacher), connect(student)]);
+
+    await expect(connectError(client(url, clients, cookie("s1"), "a1", "teacher")))
+      .resolves.toMatchObject({ data: { code: "SESSION_REQUIRED" } });
+    await expect(connectError(client(url, clients, `${TEACHER_SESSION_COOKIE_NAME}=s1`, "a1", "teacher")))
+      .resolves.toMatchObject({ data: { code: "ROLE_FORBIDDEN" } });
+    await expect(connectError(client(url, clients, cookie("teacher", "teacher"), "a1", "student")))
+      .resolves.toMatchObject({ data: { code: "SESSION_REQUIRED" } });
+    await expect(connectError(client(url, clients, dualCookies, "a2", "student")))
+      .resolves.toMatchObject({ data: { code: "ACTIVITY_SCOPE_FORBIDDEN" } });
+
+    const teacherEvents: unknown[] = [];
+    const studentEvents: unknown[] = [];
+    teacher.on("submission.updated", (event) => teacherEvents.push(event));
+    student.on("submission.updated", (event) => studentEvents.push(event));
+    await request(app).post("/api/teacher/activities/a1/open")
+      .set("Cookie", cookie("teacher", "teacher")).expect(200);
+    await request(app).put("/api/student/activities/a1/questions/a1-q1/submission")
+      .set("Cookie", cookie("s1"))
+      .send({ answer: "隔離測試", idempotencyKey: "dual-cookie" }).expect(200);
+    await waitFor(() => teacherEvents.length === 1 && studentEvents.length === 1);
+    expect(teacherEvents[0]).toMatchObject({ groupId: "a1-g1", answer: "隔離測試" });
+    expect(studentEvents[0]).toMatchObject({ answer: "隔離測試" });
+    expect(studentEvents[0]).not.toHaveProperty("groupId");
+  });
+
   it("成功交易才推播，老師取得完整提交，學生只取得本組裁切 payload", async () => {
     const { app, url, clients } = await setup();
-    const teacher = client(url, clients, "teacher", "a1");
-    const firstGroup = client(url, clients, "s1", "a1");
-    const secondGroup = client(url, clients, "s2", "a1");
+    const teacher = client(url, clients, cookie("teacher", "teacher"), "a1", "teacher");
+    const firstGroup = client(url, clients, cookie("s1"), "a1");
+    const secondGroup = client(url, clients, cookie("s2"), "a1");
     await Promise.all([connect(teacher), connect(firstGroup), connect(secondGroup)]);
     const teacherSubmissions: unknown[] = [];
     const firstSubmissions: unknown[] = [];
@@ -139,7 +177,7 @@ describe("Socket.IO session、room 與事件裁切", () => {
     firstGroup.on("activity.closed", (event) => firstClosed.push(event));
     secondGroup.on("activity.closed", (event) => secondClosed.push(event));
 
-    await request(app).post("/api/teacher/activities/a1/open").set("Cookie", cookie("teacher")).expect(200);
+    await request(app).post("/api/teacher/activities/a1/open").set("Cookie", cookie("teacher", "teacher")).expect(200);
     await waitFor(() => teacherOpened.length === 1 && firstOpened.length === 1 && secondOpened.length === 1);
     expect(teacherOpened[0]).toEqual({ activityId: "a1", state: "OPEN", revision: 1 });
     expect(firstOpened[0]).toEqual(teacherOpened[0]);
@@ -173,14 +211,14 @@ describe("Socket.IO session、room 與事件裁切", () => {
     expect(teacherSubmissions).toHaveLength(2);
     expect(firstSubmissions).toHaveLength(2);
 
-    await request(app).post("/api/teacher/activities/a1/close").set("Cookie", cookie("teacher")).expect(200);
+    await request(app).post("/api/teacher/activities/a1/close").set("Cookie", cookie("teacher", "teacher")).expect(200);
     await waitFor(() => teacherClosed.length === 1 && firstClosed.length === 1 && secondClosed.length === 1);
     expect(teacherClosed[0]).toEqual({ activityId: "a1", state: "CLOSED", revision: 4 });
     expect(firstClosed[0]).toEqual(teacherClosed[0]);
     expect(secondClosed[0]).toEqual(teacherClosed[0]);
     expect(teacherClosed[0]).not.toHaveProperty("answer");
     expect(teacherClosed[0]).not.toHaveProperty("results");
-    await request(app).post("/api/teacher/activities/a1/close").set("Cookie", cookie("teacher")).expect(200);
+    await request(app).post("/api/teacher/activities/a1/close").set("Cookie", cookie("teacher", "teacher")).expect(200);
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(teacherClosed).toHaveLength(1);
     expect(firstClosed).toHaveLength(1);

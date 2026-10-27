@@ -12,7 +12,7 @@ import { createGuidedNotesImportRouter } from "./guided-notes/import-routes.js";
 import { GuidedNotesImportService } from "./guided-notes/import-service.js";
 import { createPublicActivityRouter, createTeacherGroupRouter } from "./groups/group-routes.js";
 import { GroupService } from "./services/group-service.js";
-import { createStudentActivityRouter, createTeacherActivityRouter } from "./activities/activity-routes.js";
+import { createStudentActivityRouter, createTeacherActivityListRouter, createTeacherActivityRouter } from "./activities/activity-routes.js";
 import { ActivityLifecycleService } from "./services/activity-lifecycle.js";
 import { ActivityCloseService } from "./services/activity-close.js";
 import { SnapshotService } from "./services/snapshot-service.js";
@@ -49,6 +49,11 @@ export function registerApplicationRoutes(
     "/api/teacher/imports",
     requireRole(sessions, "teacher"),
     createGuidedNotesImportRouter(guidedNotesImports),
+  );
+  app.use(
+    "/api/teacher/activities",
+    requireRole(sessions, "teacher"),
+    createTeacherActivityListRouter(database),
   );
   app.use(
     "/api/teacher/activities/:activityId/groups",

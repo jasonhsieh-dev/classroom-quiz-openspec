@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { TeacherSessionResponse } from "@classroom-buzzer/shared";
 import {
-  SESSION_COOKIE_NAME,
+  TEACHER_SESSION_COOKIE_NAME,
   SessionService,
   sessionCookieOptions,
 } from "./session-auth.js";
@@ -13,7 +13,7 @@ export function createTeacherSessionRouter(sessions: SessionService): Router {
     try {
       const session = sessions.createTeacherSession();
       response.cookie(
-        SESSION_COOKIE_NAME,
+        TEACHER_SESSION_COOKIE_NAME,
         session.id,
         sessionCookieOptions(request.secure, sessions.ttlMs),
       );

@@ -3,7 +3,7 @@ import request from "supertest";
 import { join } from "node:path";
 import { createApp } from "../app.js";
 import { registerApplicationRoutes } from "../application-routes.js";
-import { SESSION_COOKIE_NAME, SessionService } from "../auth/session-auth.js";
+import { STUDENT_SESSION_COOKIE_NAME, TEACHER_SESSION_COOKIE_NAME, SessionService } from "../auth/session-auth.js";
 import { createTestDatabase, type TestDatabase } from "../db/test-database.js";
 import {
   ActivityRepository,
@@ -47,6 +47,8 @@ function addQuestion(database: TestDatabase, activityId: string, id: string, sor
     id,
     activityId,
     displayNumber: id,
+    promptText: `完整題目 ${id}`,
+    promptRange: `C${sortOrder + 2}`,
     sortOrder,
     sheetName: "學習單",
     numberCell: `A${sortOrder + 2}`,
@@ -86,8 +88,8 @@ function openFixture(database: TestDatabase): { s1: SessionRecord; s2: SessionRe
   return { s1, s2 };
 }
 
-function cookie(id: string): string {
-  return `${SESSION_COOKIE_NAME}=${id}`;
+function cookie(id: string, role: "teacher" | "student" = "student"): string {
+  return `${role === "teacher" ? TEACHER_SESSION_COOKIE_NAME : STUDENT_SESSION_COOKIE_NAME}=${id}`;
 }
 
 describe("活動截止與結果快照", () => {
@@ -206,11 +208,11 @@ describe("活動截止與結果快照", () => {
     } });
     const closePath = "/api/teacher/activities/a1/close";
     await request(app).post(closePath).expect(401);
-    await request(app).post(closePath).set("Cookie", cookie("s1")).expect(403);
-    await request(app).post(closePath).set("Cookie", cookie("expired-teacher")).expect(401);
-    await request(app).post("/api/teacher/activities/missing/close").set("Cookie", cookie("teacher")).expect(404);
-    const first = await request(app).post(closePath).set("Cookie", cookie("teacher")).expect(200);
-    const repeated = await request(app).post(closePath).set("Cookie", cookie("teacher")).expect(200);
+    await request(app).post(closePath).set("Cookie", cookie("s1", "teacher")).expect(403);
+    await request(app).post(closePath).set("Cookie", cookie("expired-teacher", "teacher")).expect(401);
+    await request(app).post("/api/teacher/activities/missing/close").set("Cookie", cookie("teacher", "teacher")).expect(404);
+    const first = await request(app).post(closePath).set("Cookie", cookie("teacher", "teacher")).expect(200);
+    const repeated = await request(app).post(closePath).set("Cookie", cookie("teacher", "teacher")).expect(200);
     expect(repeated.body).toEqual(first.body);
     const rejected = await request(app)
       .put("/api/student/activities/a1/questions/q1/submission")
@@ -219,5 +221,41 @@ describe("活動截止與結果快照", () => {
       .expect(409);
     expect(rejected.body.error.code).toBe("ACTIVITY_CLOSED");
     expect(new SubmissionRepository(database.database).listAttemptsByActivity("a1")).toEqual([]);
+  });
+
+  it("同一瀏覽器先建立學生 session 後仍可用老師 session 截止，結果只建立一次且拒絕後續提交", async () => {
+    const database = createDatabase();
+    addActivity(database, "a1");
+    addGroup(database, "a1", "g1");
+    addGroup(database, "a1", "g2");
+    addQuestion(database, "a1", "q1", 0);
+    let sequence = 0;
+    const sessionService = new SessionService(database.database, {
+      now: () => new Date(openedAt),
+      idFactory: () => `browser-session-${++sequence}`,
+    });
+    const app = createApp({ registerRoutes(instance) {
+      registerApplicationRoutes(instance, database.database, {
+        data: join(database.directory, "data"), uploads: join(database.directory, "uploads"), exports: join(database.directory, "exports"),
+      }, { sessions: sessionService });
+    } });
+    const browser = request.agent(app);
+    await browser.post("/api/teacher/session").expect(201);
+    await browser.post("/api/student/session").send({ activityId: "a1", groupId: "g1" }).expect(201);
+    await browser.post("/api/teacher/activities/a1/open").expect(200);
+    await browser.put("/api/student/activities/a1/questions/q1/submission")
+      .send({ answer: "有效答案", idempotencyKey: "before-close" }).expect(200);
+
+    const first = await browser.post("/api/teacher/activities/a1/close").expect(200);
+    expect(first.body).toMatchObject({ activityId: "a1", state: "CLOSED", resultCount: 1 });
+    expect(new ActivityRepository(database.database).getById("a1").state).toBe("CLOSED");
+    expect(new ResultRepository(database.database).listByActivity("a1")).toHaveLength(1);
+
+    const repeated = await browser.post("/api/teacher/activities/a1/close").expect(200);
+    expect(repeated.body).toEqual(first.body);
+    expect(new ResultRepository(database.database).listByActivity("a1")).toHaveLength(1);
+    await browser.put("/api/student/activities/a1/questions/q1/submission")
+      .send({ answer: "截止後答案", idempotencyKey: "after-close" })
+      .expect(409, { error: { code: "ACTIVITY_CLOSED", message: "活動已結束，不得再提交或修改答案。" } });
   });
 });

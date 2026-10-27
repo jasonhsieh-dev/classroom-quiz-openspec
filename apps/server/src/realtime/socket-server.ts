@@ -103,13 +103,19 @@ export function configureSocketServer(
   io.use((socket: Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, RealtimeSocketData>, next) => {
     try {
       const activityId = socket.handshake.auth.activityId;
+      const usage = socket.handshake.auth.usage;
       if (typeof activityId !== "string" || !activityId.trim()) {
         throw new AppError(400, "ACTIVITY_ID_REQUIRED", "即時連線必須指定活動。");
       }
+      if (usage !== "teacher" && usage !== "student") {
+        throw new AppError(400, "SOCKET_USAGE_REQUIRED", "即時連線必須指定老師或學生用途。");
+      }
       const activity = activities.findById(activityId);
       if (!activity) throw new AppError(404, "ACTIVITY_NOT_FOUND", "找不到指定活動。");
-      const session = sessions.resolveCookieHeader(socket.handshake.headers.cookie);
-      if (session.role === "student" && (session.activityId !== activityId || !session.groupId)) {
+      const session = usage === "teacher"
+        ? sessions.resolveTeacherCookieHeader(socket.handshake.headers.cookie)
+        : sessions.resolveStudentCookieHeader(socket.handshake.headers.cookie);
+      if (usage === "student" && (session.activityId !== activityId || !session.groupId)) {
         throw new AppError(403, "ACTIVITY_SCOPE_FORBIDDEN", "不得訂閱其他活動或組別的即時資料。");
       }
       socket.data = { activityId, session };

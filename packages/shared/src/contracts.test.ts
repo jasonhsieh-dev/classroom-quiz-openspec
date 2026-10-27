@@ -44,6 +44,10 @@ describe("共用契約", () => {
         questions: [],
       }).success,
     ).toBe(false);
+    expect(ActivitySnapshotSchema.safeParse({
+      activityId: "activity-1", state: "OPEN", revision: 1,
+      questions: [{ id: "q1", displayNumber: "1", sortOrder: 0 }],
+    }).success).toBe(false);
     expect(
       StudentSubmissionUpdatedEventSchema.safeParse({
         activityId: "activity-1",
@@ -116,6 +120,9 @@ describe("共用契約", () => {
       submissions: [{ questionId: "q1", groupId: "g1", answer: "答案", serverReceivedAt: "2026-10-24T02:00:00.000Z" }],
       results: null,
     }).submissions[0]).toHaveProperty("groupId", "g1");
+    expect(TeacherActivitySnapshotSchema.safeParse({
+      ...base, role: "teacher", groups: [], submissions: [], results: null,
+    }).success).toBe(false);
     expect(StudentActivitySnapshotSchema.parse({
       ...base, role: "student", group: { id: "g1", name: "第一組" },
       submissions: [{ questionId: "q1", answer: "答案", serverReceivedAt: "2026-10-24T02:00:00.000Z" }],

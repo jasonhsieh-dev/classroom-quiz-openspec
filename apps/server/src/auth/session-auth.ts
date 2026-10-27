@@ -10,7 +10,8 @@ import {
   type SessionRecord,
 } from "../db/repositories/index.js";
 
-export const SESSION_COOKIE_NAME = "classroom_buzzer_session";
+export const TEACHER_SESSION_COOKIE_NAME = "classroom_buzzer_teacher_session";
+export const STUDENT_SESSION_COOKIE_NAME = "classroom_buzzer_student_session";
 export const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1_000;
 
 interface SessionServiceOptions {
@@ -88,12 +89,28 @@ export class SessionService {
     return { session, group: { id: group.id, name: group.name } };
   }
 
-  resolve(request: Request): SessionRecord {
-    return this.resolveCookieHeader(request.headers.cookie);
+  resolveTeacher(request: Request): SessionRecord {
+    return this.resolveTeacherCookieHeader(request.headers.cookie);
   }
 
-  resolveCookieHeader(cookieHeader: string | undefined): SessionRecord {
-    const id = cookieValue(cookieHeader, SESSION_COOKIE_NAME);
+  resolveStudent(request: Request): SessionRecord {
+    return this.resolveStudentCookieHeader(request.headers.cookie);
+  }
+
+  resolveTeacherCookieHeader(cookieHeader: string | undefined): SessionRecord {
+    return this.resolveCookieHeader(cookieHeader, TEACHER_SESSION_COOKIE_NAME, "teacher");
+  }
+
+  resolveStudentCookieHeader(cookieHeader: string | undefined): SessionRecord {
+    return this.resolveCookieHeader(cookieHeader, STUDENT_SESSION_COOKIE_NAME, "student");
+  }
+
+  private resolveCookieHeader(
+    cookieHeader: string | undefined,
+    cookieName: string,
+    expectedRole: Role,
+  ): SessionRecord {
+    const id = cookieValue(cookieHeader, cookieName);
     if (!id) {
       throw new AppError(401, "SESSION_REQUIRED", "需要有效的 session 才能存取此功能。");
     }
@@ -103,6 +120,9 @@ export class SessionService {
     }
     if (session.expiresAt <= this.now().toISOString()) {
       throw new AppError(401, "SESSION_EXPIRED", "Session 已過期，請重新進入系統。");
+    }
+    if (session.role !== expectedRole) {
+      throw new AppError(403, "ROLE_FORBIDDEN", "目前 session 無權存取此功能。");
     }
     return session;
   }
@@ -114,10 +134,9 @@ export function requireRole(
 ): RequestHandler {
   return (request, _response, next) => {
     try {
-      const session = sessions.resolve(request);
-      if (session.role !== role) {
-        throw new AppError(403, "ROLE_FORBIDDEN", "目前 session 無權存取此功能。");
-      }
+      const session = role === "teacher"
+        ? sessions.resolveTeacher(request)
+        : sessions.resolveStudent(request);
       (request as AuthenticatedRequest).authSession = session;
       next();
     } catch (error) {

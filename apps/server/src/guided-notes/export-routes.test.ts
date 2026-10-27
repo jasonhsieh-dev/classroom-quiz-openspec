@@ -6,7 +6,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createApp } from "../app.js";
 import { registerApplicationRoutes } from "../application-routes.js";
-import { SESSION_COOKIE_NAME, SessionService } from "../auth/session-auth.js";
+import { STUDENT_SESSION_COOKIE_NAME, TEACHER_SESSION_COOKIE_NAME, SessionService } from "../auth/session-auth.js";
 import { createTestDatabase, type TestDatabase } from "../db/test-database.js";
 import { ActivityRepository, GroupRepository, QuestionRepository, SessionRepository } from "../db/repositories/index.js";
 import { ActivityStateService } from "../services/activity-state.js";
@@ -18,7 +18,8 @@ import { parseGuidedNotesWorkbook } from "./parser.js";
 const databases: TestDatabase[] = [];
 afterEach(() => { for (const item of databases.splice(0)) item.cleanup(); });
 const now = "2026-10-25T04:00:00.000Z";
-const cookie = (id: string) => `${SESSION_COOKIE_NAME}=${id}`;
+const cookie = (id: string, role: "teacher" | "student" = "teacher") =>
+  `${role === "teacher" ? TEACHER_SESSION_COOKIE_NAME : STUDENT_SESSION_COOKIE_NAME}=${id}`;
 
 async function setup() {
   const test = createTestDatabase(); databases.push(test);

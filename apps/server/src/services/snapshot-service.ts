@@ -27,8 +27,10 @@ export class SnapshotService {
   teacher(activityId: string): TeacherActivitySnapshot {
     try {
       const base = this.base(activityId);
+      const activity = this.activities.getById(activityId);
       return {
         ...base,
+        title: activity.title,
         role: "teacher",
         groups: this.groups.listByActivity(activityId).map(({ id, name }) => ({ id, name })),
         submissions: this.submissions(activityId).map((row) => ({
@@ -77,7 +79,12 @@ export class SnapshotService {
       activityId: activity.id,
       state: activity.state,
       revision: activity.revision,
-      questions: this.questions.listByActivity(activityId).map(({ id, displayNumber, sortOrder }) => ({ id, displayNumber, sortOrder })),
+      questions: this.questions.listByActivity(activityId).map(({ id, displayNumber, promptText, sortOrder }) => ({
+        id,
+        displayNumber,
+        promptText: promptText ?? "（舊活動未保存完整題目）",
+        sortOrder,
+      })),
     };
   }
 

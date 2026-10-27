@@ -79,6 +79,22 @@ button.secondary { color: #28334a; background: #e8edf6; }
   gap: 0.25rem;
 }
 
+.question-presentation { display: grid; gap: 0.35rem; }
+.question-presentation h3,
+.question-presentation h4 { margin: 0; }
+.question-presentation.compact { display: grid; gap: 0.25rem; }
+.question-number { font-weight: 800; }
+.question-prompt {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.question-presentation.compact .question-prompt {
+  font-size: 0.82rem;
+  font-weight: 500;
+  opacity: 0.88;
+}
+
 .question-grid button small {
   font-weight: 500;
   opacity: 0.78;

@@ -11,7 +11,8 @@ import {
 } from "../db/repositories/index.js";
 import { readGuidedNotesFixture } from "../guided-notes/test-fixtures.js";
 import {
-  SESSION_COOKIE_NAME,
+  STUDENT_SESSION_COOKIE_NAME,
+  TEACHER_SESSION_COOKIE_NAME,
   SessionService,
   sessionCookieOptions,
 } from "./session-auth.js";
@@ -50,8 +51,9 @@ function setup() {
   return { app, testDatabase };
 }
 
-function cookie(id: string): string {
-  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(id)}`;
+function cookie(id: string, role: "teacher" | "student" = "teacher"): string {
+  const name = role === "teacher" ? TEACHER_SESSION_COOKIE_NAME : STUDENT_SESSION_COOKIE_NAME;
+  return `${name}=${encodeURIComponent(id)}`;
 }
 
 function createStudentSession(testDatabase: TestDatabase, expiresAt: string) {
@@ -113,7 +115,7 @@ describe("老師與學生 session 授權", () => {
 
     expect(response.body).toMatchObject({ role: "teacher" });
     const setCookie = response.headers["set-cookie"]?.[0] ?? "";
-    expect(setCookie).toContain(`${SESSION_COOKIE_NAME}=`);
+    expect(setCookie).toContain(`${TEACHER_SESSION_COOKIE_NAME}=`);
     expect(setCookie).toContain("HttpOnly");
     expect(setCookie).toContain("SameSite=Lax");
     expect(setCookie).toContain("Path=/");
@@ -168,11 +170,11 @@ describe("老師與學生 session 授權", () => {
     createStudentSession(testDatabase, "2026-10-23T03:00:00.000Z");
     await request(app)
       .post("/api/teacher/imports")
-      .set("Cookie", cookie("student-session"))
-      .expect(403, {
+      .set("Cookie", cookie("student-session", "student"))
+      .expect(401, {
         error: {
-          code: "ROLE_FORBIDDEN",
-          message: "目前 session 無權存取此功能。",
+          code: "SESSION_REQUIRED",
+          message: "需要有效的 session 才能存取此功能。",
         },
       });
 
@@ -206,8 +208,8 @@ describe("老師與學生 session 授權", () => {
 
     await request(app).post("/api/teacher/imports").expect(401);
     await upload(
-      request.agent(app).set("Cookie", cookie("student-session")),
-    ).then((response) => expect(response.status).toBe(403));
+      request.agent(app).set("Cookie", cookie("student-session", "student")),
+    ).then((response) => expect(response.status).toBe(401));
 
     const confirmDraft = await upload(teacher).then((response) => {
       expect(response.status).toBe(201);
@@ -219,9 +221,9 @@ describe("老師與學生 session 授權", () => {
       .expect(401);
     await request(app)
       .post(`/api/teacher/imports/${confirmDraft}/confirm`)
-      .set("Cookie", cookie("student-session"))
+      .set("Cookie", cookie("student-session", "student"))
       .send({ title: "學生" })
-      .expect(403);
+      .expect(401);
     await teacher
       .post(`/api/teacher/imports/${confirmDraft}/confirm`)
       .send({ title: "老師建立活動" })
@@ -236,8 +238,50 @@ describe("老師與學生 session 授權", () => {
       .expect(401);
     await request(app)
       .delete(`/api/teacher/imports/${cancelDraft}`)
-      .set("Cookie", cookie("student-session"))
-      .expect(403);
+      .set("Cookie", cookie("student-session", "student"))
+      .expect(401);
     await teacher.delete(`/api/teacher/imports/${cancelDraft}`).expect(204);
+  });
+
+  it("同一瀏覽器 agent 可依序建立老師與學生 session 並同時授權", async () => {
+    const { app, testDatabase } = setup();
+    createStudentSession(testDatabase, "2026-10-23T03:00:00.000Z");
+    const browser = request.agent(app);
+
+    const teacher = await browser.post("/api/teacher/session").expect(201);
+    expect(teacher.headers["set-cookie"]?.[0]).toContain(`${TEACHER_SESSION_COOKIE_NAME}=`);
+    expect(teacher.headers["set-cookie"]?.[0]).not.toContain(STUDENT_SESSION_COOKIE_NAME);
+
+    const student = await browser.post("/api/student/session")
+      .send({ activityId: "student-activity", groupId: "student-group" })
+      .expect(201);
+    expect(student.headers["set-cookie"]?.[0]).toContain(`${STUDENT_SESSION_COOKIE_NAME}=`);
+    expect(student.headers["set-cookie"]?.[0]).not.toContain(TEACHER_SESSION_COOKIE_NAME);
+
+    await upload(browser).then((response) => expect(response.status).toBe(201));
+    await browser.get("/api/student/activities/student-activity/snapshot").expect(200);
+  });
+
+  it("HTTP middleware 只接受目標角色 cookie，並以繁體中文區分缺少與錯誤角色", async () => {
+    const { app, testDatabase } = setup();
+    createStudentSession(testDatabase, "2026-10-23T03:00:00.000Z");
+    new SessionRepository(testDatabase.database).create({
+      id: "teacher-session", role: "teacher", activityId: null, groupId: null,
+      createdAt: now.toISOString(), expiresAt: "2026-10-23T03:00:00.000Z",
+    });
+
+    await request(app).post("/api/teacher/imports")
+      .set("Cookie", cookie("student-session", "student"))
+      .expect(401, { error: { code: "SESSION_REQUIRED", message: "需要有效的 session 才能存取此功能。" } });
+    await request(app).post("/api/teacher/imports")
+      .set("Cookie", cookie("student-session", "teacher"))
+      .expect(403, { error: { code: "ROLE_FORBIDDEN", message: "目前 session 無權存取此功能。" } });
+
+    await request(app).get("/api/student/activities/student-activity/snapshot")
+      .set("Cookie", cookie("teacher-session", "teacher"))
+      .expect(401, { error: { code: "SESSION_REQUIRED", message: "需要有效的 session 才能存取此功能。" } });
+    await request(app).get("/api/student/activities/student-activity/snapshot")
+      .set("Cookie", cookie("teacher-session", "student"))
+      .expect(403, { error: { code: "ROLE_FORBIDDEN", message: "目前 session 無權存取此功能。" } });
   });
 });

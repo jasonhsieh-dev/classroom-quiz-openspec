@@ -65,16 +65,18 @@ Vite 開發伺服器預設會在終端顯示 `localhost:5173`，日常操作請�
 
 1. 老師上傳 `.xlsx`，檢查動態解析預覽後確認建立活動。
 2. 老師建立至少兩組並開始搶答，將畫面顯示的活動識別碼提供給學生。
-3. 使用兩個隔離瀏覽器 context 或無痕視窗開啟學生端，輸入活動識別碼並分別選組。
+3. 同一個瀏覽器 profile 可同時開啟老師端與一個學生端；若要模擬不同學生身分，再使用隔離 browser context 或無痕視窗，輸入活動識別碼並分別選組。
 4. 兩組選題、提交、修改；老師即時監看，學生只能看到本組狀態。
 5. 老師結束活動；所有畫面切換為唯讀結果。
 6. 老師下載回填後的 Guided Notes，新檔不會覆蓋來源檔。
 
 完整逐步通過條件請見 [人工驗收清單](docs/manual-acceptance.md)。
 
-### 已知操作限制
+### 老師活動恢復
 
-老師頁面目前將正在操作的活動識別碼保存在瀏覽器頁面狀態中；活動建立後若重新整理老師頁面，介面會回到匯入入口，無法自動恢復到該活動的管理或結果畫面。活動、題目、組別、提交與截止結果仍保存在 SQLite，不會因重新整理而遺失。展示期間請避免重新整理老師頁面；這是介面恢復能力的限制，不是資料庫資料被刪除。
+老師活動頁使用 `/teacher/activities/:activityId` URL，重新整理後會先建立老師 session，再從後端權威 snapshot 恢復同一活動，不依賴先前的 React 頁面狀態。`DRAFT` 會恢復題目與組別設定，`OPEN` 會恢復目前提交與結束活動操作，`CLOSED` 會恢復最終結果並可再次下載 XLSX。
+
+回到老師根頁時，若只有一場 `OPEN` 活動，系統會自動恢復該活動；沒有 `OPEN` 時則同時顯示匯入入口與既有 `DRAFT/CLOSED` 活動清單，由老師明確選擇。直接 URL 指向不存在的活動或 API 無法載入時會顯示錯誤與返回活動清單操作，不會重新確認匯入或建立重複活動。
 
 ## 測試與檢查
 
@@ -108,7 +110,9 @@ Playwright 使用 `var/e2e/` 隔離資料庫、上傳與匯出檔，啟動時會
 ## 無 PIN Demo 的安全邊界
 
 - 老師身分由只接受 loopback 的伺服器入口建立，學生 session 不能呼叫老師 API。
-- Session Cookie 是 `HttpOnly`、`SameSite=Lax`；HTTPS 時使用 `Secure`。
+- 老師與學生分別使用 `classroom_buzzer_teacher_session` 與 `classroom_buzzer_student_session`，兩顆 Cookie 可在同一瀏覽器 profile 共存，不會因學生選組而覆蓋老師 session。
+- 兩顆 Session Cookie 都是 `HttpOnly`、`SameSite=Lax`、`Path=/`；HTTPS 時使用 `Secure`。
+- HTTP API 只解析符合端點角色的 Cookie；Socket.IO 的連線用途只負責選擇 Cookie，實際角色、到期、活動及組別範圍仍由伺服器驗證。
 - 本系統沒有 PIN、帳號或真實身分驗證，因此無法確認操作者真實身分。
 - 能操作本機電腦的人可以另開 session 進入本機老師入口，也可以另開學生 session 冒選其他組別。
 - 這些限制適合受控課堂 Demo，不適合公開部署。公開使用前必須新增正式登入、來源允許清單、HTTPS 與完整 CSRF 防護。

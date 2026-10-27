@@ -51,10 +51,16 @@ describe("Guided Notes 結果匯出", () => {
       const expected = new ExcelJS.Workbook(); await expected.xlsx.readFile(sourcePath);
       expected.getWorksheet(mappings[0]!.sheetName)!.getCell(mappings[0]!.answerAnchor).value = "成功答案";
       const actual = new ExcelJS.Workbook(); await actual.xlsx.readFile(result.outputPath);
-      expect(compareWorkbookSemantics(captureWorkbookSemantics(expected), captureWorkbookSemantics(actual))).toEqual([]);
+      const expectedSemantics = captureWorkbookSemantics(expected);
+      const actualSemantics = captureWorkbookSemantics(actual);
+      expect(compareWorkbookSemantics(expectedSemantics, actualSemantics)).toEqual([]);
+      expect(actualSemantics.worksheets.map(({ name, state, merges, rows, columns }) => ({ name, state, merges, rows, columns }))).toEqual(
+        expectedSemantics.worksheets.map(({ name, state, merges, rows, columns }) => ({ name, state, merges, rows, columns })),
+      );
       for (const mapping of mappings) {
         const promptAnchor = mapping.promptRange.split(":")[0]!;
         expect(actual.getWorksheet(mapping.sheetName)!.getCell(promptAnchor).text).toBe(mapping.promptText);
+        expect(actual.getWorksheet(mapping.sheetName)!.getCell(mapping.numberCell).text).toBe(mapping.displayNumber);
       }
       for (const unanswered of mappings.slice(1)) {
         expect(actual.getWorksheet(unanswered.sheetName)!.getCell(unanswered.answerAnchor).text).toBe(unanswered.originalAnswer ?? "");
@@ -84,6 +90,25 @@ describe("Guided Notes 結果匯出", () => {
     mappings.forEach((mapping, index) => {
       if (index !== winnerIndex) expect(output.getWorksheet(mapping.sheetName)!.getCell(mapping.answerAnchor).text).toBe(mapping.originalAnswer ?? "");
     });
+  });
+
+  it("多組作答時只將 receive_sequence 第一名的答案寫入 answer anchor", async () => {
+    const { test, paths, mappings } = await setup("synthetic-moved-multiple.xlsx", "OPEN");
+    const groups = new GroupRepository(test.database);
+    groups.create({ id: "g2", activityId: "a1", name: "第二組", createdAt: now });
+    const second = new SessionRepository(test.database).create({
+      id: "s2", role: "student", activityId: "a1", groupId: "g2",
+      createdAt: now, expiresAt: "2026-10-26T04:00:00.000Z",
+    });
+    new SubmissionService(test.database, { clock: () => now }).submit(second, {
+      questionId: "q1", answer: "第二名答案", idempotencyKey: "second",
+    });
+    new ActivityCloseService(test.database, () => now).close("a1");
+
+    const result = await new GuidedNotesExportService(test.database, paths, { idFactory: () => "rank-one" }).export("a1");
+    const output = new ExcelJS.Workbook(); await output.xlsx.readFile(result.outputPath);
+    expect(output.getWorksheet(mappings[0]!.sheetName)!.getCell(mappings[0]!.answerAnchor).text).toBe("成功答案");
+    expect(JSON.stringify(captureWorkbookSemantics(output))).not.toContain("第二名答案");
   });
 
   it("每次匯出建立獨立檔案與紀錄", async () => {

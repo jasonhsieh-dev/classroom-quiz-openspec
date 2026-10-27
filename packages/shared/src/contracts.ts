@@ -69,9 +69,7 @@ export const QuestionSummarySchema = z
   .object({
     id: z.string().min(1),
     displayNumber: z.string().min(1),
-    // Transitional until snapshot/result producers are migrated in their
-    // dedicated phases; new payloads can carry it without breaking legacy DTOs.
-    promptText: z.string().min(1).optional(),
+    promptText: z.string().min(1),
     sortOrder: z.number().int().nonnegative(),
   })
   .strict();
@@ -101,7 +99,7 @@ export const StudentVisibleSubmissionSchema = z.object({
 }).strict();
 
 export const TeacherActivitySnapshotSchema = ActivitySnapshotSchema.extend({
-  title: z.string().min(1).optional(),
+  title: z.string().min(1),
   role: z.literal("teacher"),
   groups: z.array(GroupSummarySchema),
   submissions: z.array(TeacherVisibleSubmissionSchema),

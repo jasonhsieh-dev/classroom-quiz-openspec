@@ -11,8 +11,8 @@ export interface StudentScopedRequest extends Request {
 export function requireStudentActivityScope(sessions: SessionService): RequestHandler {
   return (request, _response, next) => {
     try {
-      const session = sessions.resolve(request);
-      if (session.role !== "student" || !session.activityId || !session.groupId) {
+      const session = sessions.resolveStudent(request);
+      if (!session.activityId || !session.groupId) {
         throw new AppError(403, "ROLE_FORBIDDEN", "目前 session 無權存取學生功能。");
       }
       if (request.params.activityId !== session.activityId) {

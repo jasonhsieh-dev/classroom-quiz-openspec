@@ -12,6 +12,13 @@ function requireName(body: unknown): string {
   return body.name;
 }
 
+function requireCount(body: unknown): number {
+  if (!body || typeof body !== "object" || !("count" in body) || typeof body.count !== "number") {
+    throw new AppError(400, "GROUP_COUNT_INVALID", "組別數量必須是 1 至 100 的整數。");
+  }
+  return body.count;
+}
+
 function summary(group: { id: string; name: string }): GroupSummary {
   return { id: group.id, name: group.name };
 }
@@ -25,6 +32,20 @@ export function createTeacherGroupRouter(service: GroupService): Router {
   router.get("/", (request, response, next) => {
     try {
       response.json(service.list(activityId(request)).map(summary));
+    } catch (error) {
+      next(error);
+    }
+  });
+  router.put("/", (request, response, next) => {
+    try {
+      const result = service.replace(activityId(request), requireCount(request.body));
+      const body: GroupListResponse = {
+        activityId: result.activityId,
+        state: result.state,
+        revision: result.revision,
+        groups: result.groups.map(summary),
+      };
+      response.json(body);
     } catch (error) {
       next(error);
     }

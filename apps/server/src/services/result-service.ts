@@ -44,6 +44,7 @@ export class ResultService {
             question: {
               id: question.id,
               displayNumber: question.displayNumber,
+              promptText: question.promptText ?? "（舊活動未保存完整題目）",
               sortOrder: question.sortOrder,
             },
             winner: questionRows[0]
@@ -84,6 +85,7 @@ export class ResultService {
             question: {
               id: question.id,
               displayNumber: question.displayNumber,
+              promptText: question.promptText ?? "（舊活動未保存完整題目）",
               sortOrder: question.sortOrder,
             },
             winner: questionRows[0]

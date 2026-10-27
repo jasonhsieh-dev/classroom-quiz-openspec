@@ -16,7 +16,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "npm run build --workspace @classroom-buzzer/shared && playwright test",
     "test:all": "npm test && npm run test:e2e",
     "start": "npm run start --workspace @classroom-buzzer/server"
   },
