@@ -89,6 +89,11 @@ export class SubmissionService {
           throw new AppError(404, "QUESTION_NOT_FOUND", "找不到此活動的題目。");
         }
 
+        const current = this.submissions.findCurrent(question.id, session.groupId!);
+        if (current?.answer === answer) {
+          throw new AppError(409, "ANSWER_UNCHANGED", "答案未變更，無須重新提交");
+        }
+
         const update = this.database.prepare(
           `UPDATE activities
            SET next_receive_sequence = next_receive_sequence + 1,

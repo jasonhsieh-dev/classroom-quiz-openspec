@@ -572,6 +572,7 @@ export function StudentActivityView({
 	const sync = useStudentActivitySync(session.activityId, socketFactory);
 	const { snapshot, setSnapshot } = sync;
 	const [error, setError] = useState<string | null>(null);
+	const [notice, setNotice] = useState<string | null>(null);
 	const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(
 		null,
 	);
@@ -586,6 +587,7 @@ export function StudentActivityView({
 		key: string;
 	} | null>(null);
 	function selectQuestion(questionId: string) {
+		setNotice(null);
 		setSelectedQuestionId(questionId);
 		setAnswer(
 			snapshot?.submissions.find((item) => item.questionId === questionId)
@@ -596,6 +598,7 @@ export function StudentActivityView({
 
 	async function submitAnswer(event: FormEvent) {
 		event.preventDefault();
+		setNotice(null);
 		if (snapshot?.state !== "OPEN" || !selectedQuestionId) return;
 		if (identityChanged) {
 			setError(
@@ -651,6 +654,11 @@ export function StudentActivityView({
 				const body = (await response.json().catch(() => undefined)) as
 					| Partial<ApiError>
 					| undefined;
+				if (response.status === 409 && body?.error?.code === "ANSWER_UNCHANGED") {
+					pendingSubmission.current = null;
+					setNotice("答案未變更，無須重新提交");
+					return;
+				}
 				if (body?.error?.code === "ACTIVITY_CLOSED") {
 					setSnapshot((value) =>
 						value ? { ...value, state: "CLOSED" } : value,
@@ -731,6 +739,9 @@ export function StudentActivityView({
 					{error}
 				</div>
 			)}
+			{notice && snapshot.state === "OPEN" && !identityChanged && (
+				<p role="status">{notice}</p>
+			)}
 			{sync.status === "unsynced" && (
 				<div className="alert error" role="alert">
 					<span>即時狀態尚未同步：{sync.error}</span>
@@ -784,7 +795,10 @@ export function StudentActivityView({
 									aria-label="答案"
 									value={answer}
 									maxLength={2000}
-									onChange={(event) => setAnswer(event.target.value)}
+									onChange={(event) => {
+										setAnswer(event.target.value);
+										setNotice(null);
+									}}
 									disabled={
 										submitting || sync.status !== "synced" || identityChanged
 									}
@@ -972,7 +986,7 @@ export function TeacherApp() {
 	const [activity, setActivity] = useState<TeacherActivitySnapshot | null>(
 		null,
 	);
-	const [activities, setActivities] = useState<ActivitySummary[]>([]);
+	const [openActivity, setOpenActivity] = useState<ActivitySummary | null>(null);
 	const [recoveryError, setRecoveryError] = useState(false);
 
 	const busy = requestState !== "idle";
@@ -1011,20 +1025,10 @@ export function TeacherApp() {
 			await response.json(),
 		);
 		if (!parsed.success) throw new Error("伺服器回傳的活動清單格式無效。");
-		setActivities(parsed.data.activities);
-		const open = parsed.data.activities.filter((item) => item.state === "OPEN");
-		if (open.length === 1) {
-			await loadActivity(open[0]!.activityId, false);
-			window.history.replaceState(
-				{},
-				"",
-				`/teacher/activities/${encodeURIComponent(open[0]!.activityId)}`,
-			);
-		} else {
-			setActivity(null);
-			setRecoveryError(false);
-		}
-	}, [loadActivity]);
+		setOpenActivity(parsed.data.activities.find((item) => item.state === "OPEN") ?? null);
+		setActivity(null);
+		setRecoveryError(false);
+	}, []);
 
 	const createTeacherSession = useCallback(async () => {
 		setSessionState("loading");
@@ -1193,7 +1197,7 @@ export function TeacherApp() {
 								});
 						}}
 					>
-						返回活動清單
+						返回匯入首頁
 					</button>
 				</section>
 			) : activity ? (
@@ -1312,41 +1316,12 @@ export function TeacherApp() {
 							{requestState === "uploading" ? "解析中…" : "上傳並預覽"}
 						</button>
 					</form>
-					{activities.length > 0 && (
-						<section className="card activity-list">
-							<h2>既有活動</h2>
-							<p>請明確選擇要恢復的草稿或已結束活動。</p>
-							<ul>
-								{activities
-									.filter((item) => item.state !== "OPEN")
-									.map((item) => (
-										<li key={item.activityId}>
-											<button
-												type="button"
-												onClick={() => {
-													setError(null);
-													setSessionState("loading");
-													void loadActivity(item.activityId, true)
-														.then(() => setSessionState("ready"))
-														.catch((caught) => {
-															setError(
-																caught instanceof Error
-																	? caught.message
-																	: "無法恢復活動。",
-															);
-															setRecoveryError(true);
-															setSessionState("ready");
-														});
-												}}
-											>
-												開啟 {item.title}
-											</button>
-											<span>
-												{item.state} · {item.questionCount} 題
-											</span>
-										</li>
-									))}
-							</ul>
+					{openActivity && (
+						<section className="card">
+							<p>目前有進行中的活動；開始另一場前，請先返回並結束該活動。</p>
+							<a href={`/teacher/activities/${encodeURIComponent(openActivity.activityId)}`}>
+								返回進行中活動
+							</a>
 						</section>
 					)}
 				</>

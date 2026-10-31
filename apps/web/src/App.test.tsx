@@ -283,7 +283,7 @@ describe("老師 Guided Notes 匯入介面", () => {
 		);
 		expect(screen.getByText(/無法恢復指定活動/)).toBeInTheDocument();
 		expect(
-			screen.getByRole("button", { name: "返回活動清單" }),
+			screen.getByRole("button", { name: "返回匯入首頁" }),
 		).toBeInTheDocument();
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 	});
@@ -321,79 +321,77 @@ describe("老師 Guided Notes 匯入介面", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(3);
 	});
 
-	it("老師根頁只有一場 OPEN 時自動恢復且不重複建立活動", async () => {
-		const snapshot = teacherSnapshot("OPEN", {
-			activityId: "open-1",
-			title: "進行中的活動",
-		});
-		const fetchMock = vi
-			.fn()
+	it.each([false, true])("首頁有 OPEN 時僅顯示提示與連結，不恢復活動（混合歷史：%s）", async (withHistory) => {
+		const summaries = [activitySummary("open-1", "OPEN", "2026-10-27T02:00:00.000Z")];
+		if (withHistory) summaries.push(
+			activitySummary("draft-1", "DRAFT", "2026-10-27T01:00:00.000Z"),
+			activitySummary("closed-1", "CLOSED", "2026-10-27T00:00:00.000Z"),
+		);
+		const fetchMock = vi.fn()
 			.mockResolvedValueOnce(teacherSessionResponse())
-			.mockResolvedValueOnce(
-				response(true, {
-					activities: [
-						activitySummary("open-1", "OPEN", "2026-10-27T02:00:00.000Z"),
-					],
-				}),
-			)
-			.mockResolvedValue(response(true, snapshot));
+			.mockResolvedValueOnce(response(true, { activities: summaries }));
 		vi.stubGlobal("fetch", fetchMock);
 		render(<TeacherApp />);
-
-		expect(
-			await screen.findByRole("heading", { level: 1, name: "搶答活動進行中" }),
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole("heading", { level: 2, name: "進行中的活動" }),
-		).toBeInTheDocument();
-		expect(window.location.pathname).toBe("/teacher/activities/open-1");
-		expect(
-			screen.queryByRole("button", { name: "上傳並預覽" }),
-		).not.toBeInTheDocument();
-		expect(
-			fetchMock.mock.calls.some(([url]) => String(url).includes("/confirm")),
-		).toBe(false);
+		expect(await screen.findByRole("button", { name: "上傳並預覽" })).toBeEnabled();
+		expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("匯入 Guided Notes");
+		expect(screen.getByRole("link", { name: "返回進行中活動" })).toHaveAttribute("href", "/teacher/activities/open-1");
+		expect(screen.getByText(/目前有進行中的活動/)).toBeInTheDocument();
+		expect(screen.queryByText("既有活動")).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /^開啟 / })).not.toBeInTheDocument();
+		expect(window.location.pathname).toBe("/");
+		expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/api/teacher/session", "/api/teacher/activities"]);
 	});
 
-	it("沒有 OPEN 時顯示匯入入口與最新優先的 DRAFT/CLOSED 明確選擇", async () => {
-		const summaries = [
-			activitySummary("closed-1", "CLOSED", "2026-10-27T03:00:00.000Z"),
-			activitySummary("draft-1", "DRAFT", "2026-10-27T02:00:00.000Z"),
-		];
-		const fetchMock = vi
-			.fn()
+	it.each([{ summaries: [] }, { summaries: [
+		activitySummary("closed-1", "CLOSED", "2026-10-27T03:00:00.000Z"),
+		activitySummary("draft-1", "DRAFT", "2026-10-27T02:00:00.000Z"),
+	 ] }])("首頁沒有 OPEN 時只顯示匯入，不顯示歷史或提示：%j", async ({ summaries }) => {
+		const fetchMock = vi.fn()
 			.mockResolvedValueOnce(teacherSessionResponse())
-			.mockResolvedValueOnce(response(true, { activities: summaries }))
-			.mockResolvedValueOnce(
-				response(
-					true,
-					teacherSnapshot("DRAFT", {
-						activityId: "draft-1",
-						title: "draft-1 活動",
-					}),
-				),
-			);
+			.mockResolvedValueOnce(response(true, { activities: summaries }));
+		vi.stubGlobal("fetch", fetchMock);
+		render(<TeacherApp />);
+		expect(await screen.findByRole("button", { name: "上傳並預覽" })).toBeEnabled();
+		expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("匯入 Guided Notes");
+		expect(screen.queryByRole("link", { name: "返回進行中活動" })).not.toBeInTheDocument();
+		expect(screen.queryByText(/目前有進行中的活動/)).not.toBeInTheDocument();
+		expect(screen.queryByText("既有活動")).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /^開啟 / })).not.toBeInTheDocument();
+		expect(window.location.pathname).toBe("/");
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it.each([response(false, { error: { message: "摘要載入失敗" } }), response(true, {})])("首頁摘要失敗或格式無效時可重試，且不顯示未確認連結", async (failed) => {
+		const fetchMock = vi.fn()
+			.mockResolvedValueOnce(teacherSessionResponse())
+			.mockResolvedValueOnce(failed)
+			.mockResolvedValueOnce(response(true, { activities: [] }));
 		vi.stubGlobal("fetch", fetchMock);
 		const user = userEvent.setup();
 		render(<TeacherApp />);
+		expect(await screen.findByRole("alert")).toBeInTheDocument();
+		expect(screen.queryByRole("link", { name: "返回進行中活動" })).not.toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "返回匯入首頁" }));
+		expect(await screen.findByRole("button", { name: "上傳並預覽" })).toBeEnabled();
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+		expect(window.location.pathname).toBe("/");
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
 
-		expect(
-			await screen.findByRole("button", { name: "上傳並預覽" }),
-		).toBeInTheDocument();
-		const choices = screen.getAllByRole("button", { name: /^開啟 / });
-		expect(choices.map((item) => item.textContent)).toEqual([
-			"開啟 closed-1 活動",
-			"開啟 draft-1 活動",
-		]);
-		expect(fetchMock).toHaveBeenCalledTimes(2);
-		await user.click(screen.getByRole("button", { name: "開啟 draft-1 活動" }));
-		expect(
-			await screen.findByRole("heading", { level: 1, name: "設定搶答活動" }),
-		).toBeInTheDocument();
-		expect(window.location.pathname).toBe("/teacher/activities/draft-1");
-		expect(
-			fetchMock.mock.calls.some(([url]) => String(url).includes("/confirm")),
-		).toBe(false);
+	it("指定活動載入失敗後返回首頁，有 OPEN 也不自動恢復", async () => {
+		window.history.replaceState({}, "", "/teacher/activities/missing");
+		const fetchMock = vi.fn()
+			.mockResolvedValueOnce(teacherSessionResponse())
+			.mockResolvedValueOnce(response(false, { error: { message: "找不到指定的活動。" } }, 404))
+			.mockResolvedValueOnce(response(true, { activities: [activitySummary("open-1", "OPEN", "2026-10-27T02:00:00.000Z")] }));
+		vi.stubGlobal("fetch", fetchMock);
+		const user = userEvent.setup();
+		render(<TeacherApp />);
+		await user.click(await screen.findByRole("button", { name: "返回匯入首頁" }));
+		expect(await screen.findByRole("button", { name: "上傳並預覽" })).toBeEnabled();
+		expect(screen.getByRole("link", { name: "返回進行中活動" })).toHaveAttribute("href", "/teacher/activities/open-1");
+		expect(window.location.pathname).toBe("/");
+		expect(fetchMock).toHaveBeenCalledTimes(3);
 	});
 
 	it("重新整理 OPEN URL 後以權威 snapshot 恢復題目、提交與結束操作", async () => {
@@ -1181,6 +1179,67 @@ describe("老師 Guided Notes 匯入介面", () => {
 		expect(screen.getByText("第二組秘密答案")).toBeInTheDocument();
 	});
 
+	it("相同答案由後端判定未變更，保留時間、清除 pending key 並可修改或切題", async () => {
+		const session = { role: "student" as const, activityId: "a1", group: { id: "g1", name: "第一組" }, expiresAt: "2026-10-24T10:00:00.000Z" };
+		const original = { questionId: "q1", answer: "A", serverReceivedAt: "2026-10-24T02:01:00.000Z" };
+		const unchanged = () => response(false, { error: { code: "ANSWER_UNCHANGED", message: "答案未變更，無須重新提交" } }, 409);
+		let resolveUnchanged!: (value: Response) => void;
+		const waiting = new Promise<Response>((resolve) => { resolveUnchanged = resolve; });
+		const fetchMock = vi.fn()
+			.mockResolvedValueOnce(response(true, { role: "student", activityId: "a1", state: "OPEN", revision: 2, group: session.group,
+				questions: [{ id: "q1", displayNumber: "1", sortOrder: 0 }, { id: "q2", displayNumber: "2", sortOrder: 1 }], submissions: [original] }))
+			.mockReturnValueOnce(waiting)
+			.mockResolvedValueOnce(unchanged())
+			.mockResolvedValueOnce(unchanged())
+			.mockResolvedValueOnce(response(true, { ...original, answer: "B", serverReceivedAt: "2026-10-24T02:02:00.000Z" }));
+		vi.stubGlobal("fetch", fetchMock);
+		const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+		const user = userEvent.setup();
+		render(<StudentActivityView session={session} />);
+		await user.click(await screen.findByRole("button", { name: "1" }));
+		await user.click(screen.getByRole("button", { name: "修改答案" }));
+		expect(screen.getByRole("button", { name: "提交中…" })).toBeDisabled();
+		resolveUnchanged(unchanged());
+		expect(await screen.findByRole("status")).toHaveTextContent("答案未變更，無須重新提交");
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+		expect(screen.getByText("2026/10/24 10:01:00")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("A")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "修改答案" })).toBeEnabled();
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		await user.click(screen.getByRole("button", { name: "修改答案" }));
+		await screen.findByRole("status");
+		const keys = [1, 2].map((index) => JSON.parse(fetchMock.mock.calls[index]![1].body as string).idempotencyKey);
+		expect(keys[1]).not.toBe(keys[0]);
+		expect(confirm).not.toHaveBeenCalled();
+		await user.click(screen.getByRole("button", { name: "2" }));
+		expect(screen.queryByRole("status")).not.toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "1" }));
+		await user.click(screen.getByRole("button", { name: "修改答案" }));
+		await screen.findByRole("status");
+		await user.clear(screen.getByLabelText("答案"));
+		await user.type(screen.getByLabelText("答案"), "B");
+		expect(screen.queryByRole("status")).not.toBeInTheDocument();
+		await user.click(screen.getByRole("button", { name: "修改答案" }));
+		expect(confirm).toHaveBeenCalledWith(expect.stringContaining("更新有效提交時間與順位"));
+		expect(await screen.findByText("2026/10/24 10:02:00")).toBeInTheDocument();
+	});
+
+	it("本機 snapshot 答案相同仍送後端，由權威 current 接受真正修改", async () => {
+		const session = { role: "student" as const, activityId: "a1", group: { id: "g1", name: "第一組" }, expiresAt: "2026-10-24T10:00:00.000Z" };
+		const fetchMock = vi.fn()
+			.mockResolvedValueOnce(response(true, { role: "student", activityId: "a1", state: "OPEN", revision: 2, group: session.group,
+				questions: [{ id: "q1", displayNumber: "1", sortOrder: 0 }], submissions: [{ questionId: "q1", answer: "A", serverReceivedAt: "2026-10-24T02:01:00.000Z" }] }))
+			.mockResolvedValueOnce(response(true, { questionId: "q1", answer: "A", serverReceivedAt: "2026-10-24T02:03:00.000Z" }));
+		vi.stubGlobal("fetch", fetchMock);
+		const user = userEvent.setup();
+		render(<StudentActivityView session={session} />);
+		await user.click(await screen.findByRole("button", { name: "1" }));
+		await user.click(screen.getByRole("button", { name: "修改答案" }));
+		expect(await screen.findByText("2026/10/24 10:03:00")).toBeInTheDocument();
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(screen.queryByRole("status")).not.toBeInTheDocument();
+	});
+
 	it("提交失敗可用相同 idempotency key 重送，截止回應立即切換唯讀", async () => {
 		const session = {
 			role: "student" as const,
@@ -1592,10 +1651,10 @@ describe("老師 Guided Notes 匯入介面", () => {
 		expect(
 			screen.getByRole("button", { name: "下載已回填 Guided Notes" }),
 		).toBeInTheDocument();
-		expect(fetchMock).toHaveBeenCalledWith(
+		await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
 			"/api/teacher/activities/a1/results",
 			{ credentials: "same-origin" },
-		);
+		));
 		expect(
 			screen.queryByRole("button", { name: "結束活動" }),
 		).not.toBeInTheDocument();

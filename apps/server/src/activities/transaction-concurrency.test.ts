@@ -122,6 +122,31 @@ describe("SQLite 真正並行交易", () => {
     expect(database.database.prepare("SELECT COUNT(*) AS count FROM current_submissions WHERE activity_id = 'a1'").get()).toEqual({ count: 4 });
   });
 
+  it.each(["首次", "修改", "未變更"])("同組不同 session 並行相同答案：%s", async (mode) => {
+    const database = setup();
+    new SessionRepository(database.database).create({ id: "s1b", role: "student", activityId: "a1", groupId: "g1", createdAt: time, expiresAt: "2026-10-25T00:00:00.000Z" });
+    const repository = new SubmissionRepository(database.database);
+    if (mode !== "首次") {
+      const seed = spawnAction({ filename: database.filename, action: "submit", activityId: "a1", sessionId: "s1", questionId: "q1", answer: mode === "修改" ? "舊答案" : "相同答案", idempotencyKey: "seed" });
+      expect((await seed.result).ok).toBe(true);
+    }
+    const before = new ActivityRepository(database.database).getById("a1");
+    const beforeAttempts = repository.listAttemptsByActivity("a1");
+    const beforeCurrent = repository.findCurrent("q1", "g1");
+    const gate = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2));
+    const workers = ["s1", "s1b"].map((sessionId) => spawnAction({ filename: database.filename, action: "submit", activityId: "a1", sessionId, questionId: "q1", answer: "相同答案", idempotencyKey: `parallel-${sessionId}`, timestamp: "2026-10-24T02:02:00.000Z", startGate: gate.buffer as SharedArrayBuffer }));
+    await waitForReady(gate, 2);
+    release(gate);
+    const results = await Promise.all(workers.map((worker) => worker.result));
+    const added = mode === "未變更" ? 0 : 1;
+    expect(results.filter((result) => result.ok)).toHaveLength(added);
+    for (const result of results.filter((result) => !result.ok)) expect(result.error).toMatchObject({ status: 409, code: "ANSWER_UNCHANGED" });
+    expect(repository.listAttemptsByActivity("a1")).toHaveLength(beforeAttempts.length + added);
+    expect(new ActivityRepository(database.database).getById("a1")).toMatchObject({ nextReceiveSequence: before.nextReceiveSequence + added, revision: before.revision + added });
+    if (added) expect(repository.findCurrent("q1", "g1")).toMatchObject({ answer: "相同答案", receiveSequence: before.nextReceiveSequence + 1, serverReceivedAt: "2026-10-24T02:02:00.000Z" });
+    else expect(repository.findCurrent("q1", "g1")).toEqual(beforeCurrent);
+  });
+
   it("提交交易先取得寫入鎖時提交完整納入截止結果", async () => {
     const database = setup();
     const hold = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));

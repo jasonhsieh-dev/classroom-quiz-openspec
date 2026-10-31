@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import request from "supertest";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
 import { registerApplicationRoutes } from "../application-routes.js";
 import {
@@ -31,7 +31,9 @@ function setup(clockValues: string[] = ["2026-10-24T02:01:00.000Z"]) {
 		now: () => new Date(baseTime),
 	});
 	let clockIndex = 0;
+	const onCommitted = vi.fn();
 	const submissions = new SubmissionService(testDatabase.database, {
+		onCommitted,
 		clock: () => clockValues[Math.min(clockIndex++, clockValues.length - 1)]!,
 	});
 	const app = createApp({
@@ -48,7 +50,7 @@ function setup(clockValues: string[] = ["2026-10-24T02:01:00.000Z"]) {
 			);
 		},
 	});
-	return { app, testDatabase };
+	return { app, testDatabase, onCommitted };
 }
 
 function createActivity(testDatabase: TestDatabase, id: string) {
@@ -378,6 +380,60 @@ describe("學生提交 API", () => {
 				},
 			});
 		expect(counts(testDatabase)).toEqual({ attempts: 1, current: 1 });
+	});
+
+	it("新 key 的相同／trim 相同答案與同組另一 session 不寫入、不讀取新時間或發布事件", async () => {
+		const { app, testDatabase, onCommitted } = setup([
+			"2026-10-24T02:01:00.000Z", "2026-10-24T02:02:00.000Z",
+		]);
+		fixture(testDatabase);
+		const send = (sessionId: string, answer: string, key: string) => request(app).put(path("q1"))
+			.set("Cookie", cookie(sessionId)).send({ answer, idempotencyKey: key });
+		await send("s1", "A", "first").expect(200);
+		const repository = new SubmissionRepository(testDatabase.database);
+		const before = { activity: new ActivityRepository(testDatabase.database).getById("a1"),
+			attempts: repository.listAttemptsByActivity("a1"), current: repository.findCurrent("q1", "g1") };
+		for (const [sessionId, answer, key] of [["s1", "A", "same"], ["s1", "  A\n", "trim"], ["s1b", "A", "other-session"]]) {
+			await send(sessionId!, answer!, key!).expect(409, { error: { code: "ANSWER_UNCHANGED", message: "答案未變更，無須重新提交" } });
+		}
+		expect({ activity: new ActivityRepository(testDatabase.database).getById("a1"),
+			attempts: repository.listAttemptsByActivity("a1"), current: repository.findCurrent("q1", "g1") }).toEqual(before);
+		expect(repository.findByIdempotency("s1", "q1", "same")).toBeUndefined();
+		expect(onCommitted).toHaveBeenCalledTimes(1);
+		// 未變更拒絕不占用 key，也不消耗 clock；另一組相同文字正常生效。
+		const other = await send("s2", "A", "same").expect(200);
+		expect(other.body.serverReceivedAt).toBe("2026-10-24T02:02:00.000Z");
+		expect(repository.findCurrent("q1", "g1")).toEqual(before.current);
+		expect(repository.findCurrent("q1", "g2")).toMatchObject({ answer: "A", receiveSequence: 2 });
+		await send("s1", "B", "same").expect(200);
+		expect(onCommitted).toHaveBeenCalledTimes(3);
+	});
+
+	it("A → B → A 是新修改；重播舊 key 不回復 current，衝突與截止優先於未變更", async () => {
+		const { app, testDatabase } = setup();
+		fixture(testDatabase);
+		const send = (answer: string, key: string) => request(app).put(path("q1"))
+			.set("Cookie", cookie("s1")).send({ answer, idempotencyKey: key });
+		const first = await send("A", "a").expect(200);
+		await send("B", "b").expect(200);
+		const repository = new SubmissionRepository(testDatabase.database);
+		const currentB = repository.findCurrent("q1", "g1");
+		expect((await send("A", "a").expect(200)).body).toEqual(first.body);
+		expect(repository.findCurrent("q1", "g1")).toEqual(currentB);
+		expect((await send("B", "a").expect(409)).body.error.code).toBe("IDEMPOTENCY_CONFLICT");
+		await send("A", "a-again").expect(200);
+		expect(repository.listAttemptsByActivity("a1").map(({ answer, receiveSequence }) => ({ answer, receiveSequence })))
+			.toEqual([{ answer: "A", receiveSequence: 1 }, { answer: "B", receiveSequence: 2 }, { answer: "A", receiveSequence: 3 }]);
+		await send("a", "case-change").expect(200);
+		await send("a b", "internal-space").expect(200);
+		await send("a  b", "internal-space-change").expect(200);
+		testDatabase.database.prepare("UPDATE activities SET state = 'CLOSED', closed_at = ? WHERE id = 'a1'").run(baseTime);
+		const beforeCloseReplay = repository.findCurrent("q1", "g1");
+		expect((await send("A", "a").expect(200)).body).toEqual(first.body);
+		expect((await send("a  b", "closed-new").expect(409)).body.error.code).toBe("ACTIVITY_CLOSED");
+		expect((await send("B", "a").expect(409)).body.error.code).toBe("IDEMPOTENCY_CONFLICT");
+		expect(repository.findCurrent("q1", "g1")).toEqual(beforeCloseReplay);
+		expect(repository.listAttemptsByActivity("a1")).toHaveLength(6);
 	});
 
 	it("同組可獨立提交多題，且同組另一 session 只更新目標題目的 current pointer", async () => {

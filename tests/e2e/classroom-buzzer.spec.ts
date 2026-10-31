@@ -264,6 +264,28 @@ test("同 profile 老師學生完成搶答、恢復、隱私、截止及 XLSX �
 		await expect(teacher.getByLabel("組別數量")).toHaveCount(0);
 		await expect(teacher.getByText("第一組第一題秘密答案")).toBeVisible();
 		await expect(teacher.getByText("第二組第一題修改答案")).toBeVisible();
+		const homepage = await teacherContext.newPage();
+		const summariesBeforeHome = await (await teacherContext.request.get("/api/teacher/activities")).json();
+		const homeSnapshotRequests: string[] = [];
+		homepage.on("request", (request) => {
+			if (request.url().includes("/snapshot")) homeSnapshotRequests.push(request.url());
+		});
+		await homepage.goto("/");
+		await homepage.reload();
+		await expect(homepage.getByRole("heading", { name: "匯入 Guided Notes" })).toBeVisible();
+		await expect(homepage.getByRole("button", { name: "上傳並預覽" })).toBeVisible();
+		await expect(homepage).toHaveURL("/");
+		await expect(homepage.getByText(/目前有進行中的活動/)).toBeVisible();
+		await expect(homepage.getByRole("heading", { name: "既有活動" })).toHaveCount(0);
+		const returnLink = homepage.getByRole("link", { name: "返回進行中活動" });
+		await expect(returnLink).toHaveAttribute("href", `/teacher/activities/${activityId}`);
+		expect(homeSnapshotRequests).toEqual([]);
+		await returnLink.click();
+		await expect(homepage).toHaveURL(`/teacher/activities/${activityId}`);
+		await expect(homepage.getByRole("heading", { name: "搶答活動進行中" })).toBeVisible();
+		await expect(homepage.getByText("第一組第一題秘密答案")).toBeVisible();
+		expect(await (await teacherContext.request.get("/api/teacher/activities")).json()).toEqual(summariesBeforeHome);
+		await homepage.close();
 		const cookiesAfterTeacherRefresh = await teacherContext.cookies();
 		expect(cookiesAfterTeacherRefresh.map((cookie) => cookie.name)).toEqual(
 			expect.arrayContaining([
@@ -439,7 +461,97 @@ test("同 profile 老師學生完成搶答、恢復、隱私、截止及 XLSX �
 			.getByRole("button", { name: "下載已回填 Guided Notes" })
 			.click();
 		expect(await (await secondDownloadPromise).path()).not.toBeNull();
+		const closedHome = await teacherContext.newPage();
+		const summariesBeforeClosedHome = await (await teacherContext.request.get("/api/teacher/activities")).json();
+		await closedHome.goto("/");
+		await expect(closedHome.getByRole("button", { name: "上傳並預覽" })).toBeVisible();
+		await expect(closedHome.getByRole("heading", { name: "匯入 Guided Notes" })).toBeVisible();
+		await expect(closedHome.getByRole("link", { name: "返回進行中活動" })).toHaveCount(0);
+		await expect(closedHome.getByText(/目前有進行中的活動/)).toHaveCount(0);
+		await expect(closedHome.getByRole("heading", { name: "既有活動" })).toHaveCount(0);
+		await expect(closedHome.getByRole("button", { name: /^開啟 / })).toHaveCount(0);
+		expect(await (await teacherContext.request.get("/api/teacher/activities")).json()).toEqual(summariesBeforeClosedHome);
+		expect(summariesBeforeClosedHome.activities).toEqual(expect.arrayContaining([
+			expect.objectContaining({ activityId, state: "CLOSED" }),
+			expect.objectContaining({ activityId: otherActivityId, state: "DRAFT" }),
+		]));
+		await closedHome.close();
 	} finally {
 		await Promise.all([teacherContext.close(), secondContext.close()]);
+	}
+});
+
+
+test("未變更答案保留原順位，真正修改依新序號排名且不同組互不覆蓋", async ({ browser }) => {
+	const teacherContext = await browser.newContext();
+	const firstContext = await browser.newContext();
+	const secondContext = await browser.newContext();
+	const teacher = await teacherContext.newPage();
+	const first = await firstContext.newPage();
+	const second = await secondContext.newPage();
+	try {
+		await teacher.goto("/");
+		await teacher.getByLabel("Guided Notes 檔案").setInputFiles(fixturePath);
+		await teacher.getByRole("button", { name: "上傳並預覽" }).click();
+		await expect(teacher.getByText("匯入預覽")).toBeVisible();
+		await teacher.getByLabel("活動名稱").fill("未變更答案回歸");
+		const confirmed = teacher.waitForResponse((response) => response.url().includes("/confirm") && response.request().method() === "POST");
+		await teacher.getByRole("button", { name: "確認並建立活動" }).click();
+		const activityId = (await (await confirmed).json()).activityId as string;
+		await teacher.getByLabel("組別數量").fill("2");
+		await teacher.getByRole("button", { name: "建立組別" }).click();
+		await teacher.getByRole("button", { name: "開始搶答" }).click();
+		await expect(teacher.getByRole("heading", { name: "搶答活動進行中" })).toBeVisible();
+		await join(first, activityId, "第 1 組");
+		await join(second, activityId, "第 2 組");
+		await submit(first, 0, "兩組相同文字");
+		await submit(second, 0, "兩組相同文字");
+		await expect(teacher.getByText("兩組相同文字", { exact: true })).toHaveCount(2);
+		const readSubmissionState = () => {
+			const database = new Database(e2eDatabasePath, { readonly: true });
+			try {
+				return {
+					activity: database.prepare("SELECT revision, next_receive_sequence FROM activities WHERE id = ?").get(activityId),
+					attempts: database.prepare("SELECT * FROM submission_attempts WHERE activity_id = ? ORDER BY receive_sequence").all(activityId),
+					current: database.prepare("SELECT * FROM current_submissions WHERE activity_id = ? ORDER BY question_id, group_id").all(activityId),
+				};
+			} finally { database.close(); }
+		};
+		const before = readSubmissionState();
+		const studentTime = await first.locator(".submission-status time").getAttribute("datetime");
+		const teacherTimes = await teacher.locator(".live-monitor time").evaluateAll((elements) => elements.map((element) => element.getAttribute("datetime")));
+		const unchanged = first.waitForResponse((response) => response.url().includes("/submission") && response.request().method() === "PUT");
+		await first.getByRole("button", { name: "修改答案" }).click();
+		expect((await unchanged).status()).toBe(409);
+		await expect(first.getByRole("status")).toHaveText("答案未變更，無須重新提交");
+		await expect(first.getByRole("button", { name: "修改答案" })).toBeEnabled();
+		expect(readSubmissionState()).toEqual(before);
+		await expect(first.locator(".submission-status time")).toHaveAttribute("datetime", studentTime!);
+		expect(await teacher.locator(".live-monitor time").evaluateAll((elements) => elements.map((element) => element.getAttribute("datetime")))).toEqual(teacherTimes);
+		await first.reload();
+		await join(first, activityId, "第 1 組");
+		await first.locator(".question-grid button").first().click();
+		await expect(first.getByLabel("答案")).toHaveValue("兩組相同文字");
+		await expect(first.locator(".submission-status time")).toHaveAttribute("datetime", studentTime!);
+		await submit(first, 1, "第一組原答案");
+		await submit(second, 1, "第二組答案");
+		await submit(first, 1, "第一組真正修改", true);
+		await expect(teacher.getByText("第一組真正修改", { exact: true })).toBeVisible();
+		await expect(second.getByLabel("答案")).toHaveValue("第二組答案");
+		teacher.once("dialog", (dialog) => dialog.accept());
+		await teacher.getByRole("button", { name: "結束活動" }).click();
+		await expect(teacher.getByRole("heading", { name: "活動結果與匯出" })).toBeVisible();
+		const results = await jsonFetch(teacher, `/api/teacher/activities/${activityId}/results`);
+		expect(results.status).toBe(200);
+		expect(results.body.questions[0].rankings).toMatchObject([
+			{ group: { name: "第 1 組" }, rank: 1, answer: "兩組相同文字", serverReceivedAt: studentTime },
+			{ group: { name: "第 2 組" }, rank: 2, answer: "兩組相同文字" },
+		]);
+		expect(results.body.questions[1].rankings).toMatchObject([
+			{ group: { name: "第 2 組" }, rank: 1, answer: "第二組答案" },
+			{ group: { name: "第 1 組" }, rank: 2, answer: "第一組真正修改" },
+		]);
+	} finally {
+		await Promise.all([teacherContext.close(), firstContext.close(), secondContext.close()]);
 	}
 });
