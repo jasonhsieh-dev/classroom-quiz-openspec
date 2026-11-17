@@ -29,10 +29,9 @@ npx playwright install chromium
 ```powershell
 npm.cmd ci
 npx.cmd playwright install chromium
-npm.cmd run dev
 ```
 
-其他 npm 指令也可用相同方式將 `npm` 改為 `npm.cmd`。
+安裝完成後，依下方「開發與展示啟動」設定憑證並啟動。其他 npm 指令也可用相同方式將 `npm` 改為 `npm.cmd`。
 
 ## 環境設定與資料庫
 
@@ -49,9 +48,22 @@ npm.cmd run dev
 
 ## 開發與展示啟動
 
-```bash
-npm run dev
+先完成下方「Google Sheets 後端授權設定」，將原生 Google Sheets 分享給 Service Account 並授予編輯權。Windows Demo 請在專案根目錄的同一個 PowerShell 設定並啟動；下列 JSON 路徑僅為安全示例，須改成你保存在專案外的實際路徑：
+
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS = 'C:\private\credentials\service-account.json'
+$env:CLASSROOM_BUZZER_SINGLE_UPDATE = 'true'
+
+Test-Path $env:GOOGLE_APPLICATION_CREDENTIALS
+
+npm.cmd run dev
 ```
+
+`Test-Path` 應回傳 `True`；若為 `False`，請先修正路徑再啟動。`True` 只代表檔案存在，Google 存取仍取決於有效憑證、API 啟用與文件分享權限。此 Demo 設定啟用單次更新模式；未設定該變數時，程式仍沿用一般模式。
+
+不需在網站輸入私鑰，也不需每次重新下載 JSON。`$env:` 設定只對目前 PowerShell 與其啟動的程序有效；同一視窗停止後重啟可沿用，關閉後另開視窗則須重新設定，或事先設定 Windows 使用者環境變數並重開終端機。環境變數保存的是 JSON 檔案路徑，不是私鑰內容；專案目前不自動載入 `.env`。若後端已在執行，須先停止，再於設定完成後重新啟動，才能套用設定。
+
+其他平台請先在啟動 shell 設定相同環境變數，再執行 `npm run dev`。
 
 - 老師端：<http://localhost:5173/>
 - 學生端：<http://localhost:5173/student>
@@ -132,7 +144,11 @@ Playwright 使用 `var/e2e/` 隔離資料庫、上傳與匯出檔，啟動時會
 
 ```powershell
 $env:GOOGLE_APPLICATION_CREDENTIALS = 'C:\private\credentials\service-account.json'
-npm run dev:server
+$env:CLASSROOM_BUZZER_SINGLE_UPDATE = 'true'
+
+Test-Path $env:GOOGLE_APPLICATION_CREDENTIALS
+
+npm.cmd run dev
 ```
 
 目前不自動載入 `.env`；勿使用 `VITE_` 變數傳遞憑證。未設定或無效設定只影響雲端整合，不阻止既有本機活動。授權限定 Sheets scope，Token 由官方後端授權函式庫在記憶體管理；不持久保存 Token。更換金鑰後重啟後端；外洩時立即在 Cloud Console 撤銷金鑰。
