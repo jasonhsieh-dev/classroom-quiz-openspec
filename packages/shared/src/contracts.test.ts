@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   ActivitySnapshotSchema,
+  GoogleSheetsListRequestSchema,
+  GoogleSheetsListResponseSchema,
+  GoogleSheetsPreviewRequestSchema,
   ActivitySummaryListResponseSchema,
   ApiErrorSchema,
   CloseActivityResponseSchema,
@@ -205,4 +208,10 @@ describe("共用契約", () => {
     };
     expect(StudentActivityResultsSchema.safeParse(payload).success).toBe(false);
   });
+});
+
+it("雲端匯入 strict contracts 拒絕多餘欄位及錯誤分頁型別", () => {
+  expect(GoogleSheetsListRequestSchema.safeParse({ url: "https://docs.google.com/spreadsheets/d/id/edit",private_key: "synthetic" }).success).toBe(false);
+  expect(GoogleSheetsPreviewRequestSchema.safeParse({ url: "x",sheetId: "0" }).success).toBe(false);
+  expect(GoogleSheetsListResponseSchema.safeParse({ spreadsheetId: "id",sheets: [{ sheetId: 0,title: "分頁",credentials: {} }] }).success).toBe(false);
 });

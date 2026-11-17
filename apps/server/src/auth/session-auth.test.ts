@@ -9,7 +9,8 @@ import {
   GroupRepository,
   SessionRepository,
 } from "../db/repositories/index.js";
-import { readGuidedNotesFixture } from "../guided-notes/test-fixtures.js";
+import { setup as setupCloud, url as cloudUrl } from "../guided-notes/google-sheets-test-fixtures.js";
+import { GoogleSheetsImportService } from "../guided-notes/google-sheets-import-service.js";
 import {
   STUDENT_SESSION_COOKIE_NAME,
   TEACHER_SESSION_COOKIE_NAME,
@@ -45,6 +46,8 @@ function setup() {
     registerRoutes(instance) {
       registerApplicationRoutes(instance, testDatabase.database, runtimePaths, {
         sessions,
+        googleSheetsReader: setupCloud().reader,
+        googleSheetsImports: new GoogleSheetsImportService(testDatabase.database, setupCloud().reader, () => now),
       });
     },
   });
@@ -84,13 +87,7 @@ function createStudentSession(testDatabase: TestDatabase, expiresAt: string) {
 }
 
 async function upload(agent: ReturnType<typeof request.agent>) {
-  return agent
-    .post("/api/teacher/imports")
-    .attach("file", await readGuidedNotesFixture("synthetic-single.xlsx"), {
-      filename: "合成學習單.xlsx",
-      contentType:
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
+  return agent.post("/api/teacher/imports").send({ url: cloudUrl,sheetId: 0 });
 }
 
 describe("老師與學生 session 授權", () => {

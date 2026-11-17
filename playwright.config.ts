@@ -1,5 +1,9 @@
 import { defineConfig } from "@playwright/test";
 
+// Optional isolated test ports avoid touching a running real-credential backend.
+const apiPort = process.env.CLASSROOM_E2E_API_PORT ?? "3000";
+const webPort = process.env.CLASSROOM_E2E_WEB_PORT ?? "4173";
+
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 60_000,
@@ -9,7 +13,7 @@ export default defineConfig({
   reporter: [["list"], ["html", { open: "never" }]],
   outputDir: "test-results",
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: `http://127.0.0.1:${webPort}`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
@@ -18,26 +22,26 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "node tests/e2e/prepare-runtime.mjs && npm run dev:server",
-      url: "http://127.0.0.1:3000/api/health",
+      command: "node tests/e2e/prepare-runtime.mjs && npx tsx tests/e2e/google-sheets-server.ts",
+      url: `http://127.0.0.1:${apiPort}/api/health`,
       timeout: 120_000,
       reuseExistingServer: false,
       env: {
         CLASSROOM_BUZZER_DATA_DIR: "var/e2e/data",
         CLASSROOM_BUZZER_UPLOAD_DIR: "var/e2e/uploads",
         CLASSROOM_BUZZER_EXPORT_DIR: "var/e2e/exports",
-        CLASSROOM_BUZZER_PORT: "3000",
+        CLASSROOM_BUZZER_PORT: apiPort,
       },
     },
     {
       command: "npm run dev:web",
-      url: "http://127.0.0.1:4173",
+      url: `http://127.0.0.1:${webPort}`,
       timeout: 120_000,
       reuseExistingServer: false,
       env: {
-        CLASSROOM_BUZZER_API_TARGET: "http://127.0.0.1:3000",
+        CLASSROOM_BUZZER_API_TARGET: `http://127.0.0.1:${apiPort}`,
         CLASSROOM_BUZZER_WEB_HOST: "127.0.0.1",
-        CLASSROOM_BUZZER_WEB_PORT: "4173",
+        CLASSROOM_BUZZER_WEB_PORT: webPort,
       },
     },
   ],

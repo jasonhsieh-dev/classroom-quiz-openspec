@@ -1,3 +1,5 @@
+import { GoogleSheetsWritebackService } from "./guided-notes/google-sheets-writeback-service.js";
+import { createGoogleSheetsWritebackRouter } from "./guided-notes/google-sheets-writeback-routes.js";
 import type { Express } from "express";
 import type Database from "better-sqlite3";
 import type { RuntimePaths } from "./config/runtime-paths.js";
@@ -8,8 +10,9 @@ import {
 import { requireRole, SessionService } from "./auth/session-auth.js";
 import { createTeacherSessionRouter } from "./auth/teacher-session-routes.js";
 import { createStudentSessionRouter } from "./auth/student-session-routes.js";
-import { createGuidedNotesImportRouter } from "./guided-notes/import-routes.js";
-import { GuidedNotesImportService } from "./guided-notes/import-service.js";
+import { createGoogleSheetsImportRouter } from "./guided-notes/google-sheets-import-routes.js";
+import { GoogleSheetsReader } from "./guided-notes/google-sheets-reader.js";
+import { GoogleSheetsImportService } from "./guided-notes/google-sheets-import-service.js";
 import { createPublicActivityRouter, createTeacherGroupRouter } from "./groups/group-routes.js";
 import { GroupService } from "./services/group-service.js";
 import { createStudentActivityRouter, createTeacherActivityListRouter, createTeacherActivityRouter } from "./activities/activity-routes.js";
@@ -24,7 +27,9 @@ import { GuidedNotesExportService } from "./guided-notes/export-service.js";
 
 interface ApplicationRouteServices {
   sessions?: SessionService;
-  guidedNotesImports?: GuidedNotesImportService;
+  googleSheetsReader?: GoogleSheetsReader;
+  googleSheetsWritebacks?: GoogleSheetsWritebackService;
+  googleSheetsImports?: GoogleSheetsImportService;
   submissions?: SubmissionService;
   events?: ActivityEventPublisher;
 }
@@ -36,9 +41,8 @@ export function registerApplicationRoutes(
   services: ApplicationRouteServices = {},
 ): void {
   const sessions = services.sessions ?? new SessionService(database);
-  const guidedNotesImports =
-    services.guidedNotesImports ??
-    new GuidedNotesImportService(database, runtimePaths);
+  const reader = services.googleSheetsReader ?? new GoogleSheetsReader();
+  const imports = services.googleSheetsImports ?? new GoogleSheetsImportService(database, reader);
   const submissions = services.submissions ?? new SubmissionService(database, {
     onCommitted: (event) => services.events?.submission(event),
   });
@@ -48,8 +52,10 @@ export function registerApplicationRoutes(
   app.use(
     "/api/teacher/imports",
     requireRole(sessions, "teacher"),
-    createGuidedNotesImportRouter(guidedNotesImports),
+    createGoogleSheetsImportRouter(reader, imports),
   );
+  app.use("/api/teacher/activities/:activityId/writeback",requireRole(sessions,"teacher"),
+    createGoogleSheetsWritebackRouter(services.googleSheetsWritebacks ?? new GoogleSheetsWritebackService(database,reader)));
   app.use(
     "/api/teacher/activities",
     requireRole(sessions, "teacher"),

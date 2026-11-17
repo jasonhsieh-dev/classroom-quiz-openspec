@@ -60,7 +60,7 @@ function socketFactory(socket: MockActivitySocket): ActivitySocketFactory {
 
 const preview = {
 	importId: "draft-1",
-	filename: "演算法學習單.xlsx",
+	sourceKind: "google-sheets", spreadsheetId: "synthetic", sheetId: 0, sheetTitle: "演算法學習單",
 	expiresAt: "2026-10-23T02:00:00.000Z",
 	questionCount: 2,
 	questions: [
@@ -157,12 +157,13 @@ function activitySummary(
 	};
 }
 
+const sheetList = { spreadsheetId: "synthetic", sheets: [{ sheetId: 0, title: "演算法學習單" }, { sheetId: 8, title: "第二分頁" }] };
 async function uploadFile(user: ReturnType<typeof userEvent.setup>) {
-	const file = new File(["synthetic"], "演算法學習單.xlsx", {
-		type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-	});
-	await user.upload(screen.getByLabelText("Guided Notes 檔案"), file);
-	await user.click(screen.getByRole("button", { name: "上傳並預覽" }));
+  await user.type(screen.getByLabelText("Google Sheets 網址"), "https://docs.google.com/spreadsheets/d/synthetic/edit");
+  await user.click(screen.getByRole("button", { name: "讀取分頁" }));
+  const select = await screen.findByLabelText("選擇分頁");
+  await user.selectOptions(select,"0");
+  await user.click(screen.getByRole("button", { name: "預覽 Guided Notes" }));
 }
 
 afterEach(() => {
@@ -332,7 +333,7 @@ describe("老師 Guided Notes 匯入介面", () => {
 			.mockResolvedValueOnce(response(true, { activities: summaries }));
 		vi.stubGlobal("fetch", fetchMock);
 		render(<TeacherApp />);
-		expect(await screen.findByRole("button", { name: "上傳並預覽" })).toBeEnabled();
+		expect(await screen.findByRole("button", { name: "讀取分頁" })).toBeEnabled();
 		expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("匯入 Guided Notes");
 		expect(screen.getByRole("link", { name: "返回進行中活動" })).toHaveAttribute("href", "/teacher/activities/open-1");
 		expect(screen.getByText(/目前有進行中的活動/)).toBeInTheDocument();
@@ -351,7 +352,7 @@ describe("老師 Guided Notes 匯入介面", () => {
 			.mockResolvedValueOnce(response(true, { activities: summaries }));
 		vi.stubGlobal("fetch", fetchMock);
 		render(<TeacherApp />);
-		expect(await screen.findByRole("button", { name: "上傳並預覽" })).toBeEnabled();
+		expect(await screen.findByRole("button", { name: "讀取分頁" })).toBeEnabled();
 		expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("匯入 Guided Notes");
 		expect(screen.queryByRole("link", { name: "返回進行中活動" })).not.toBeInTheDocument();
 		expect(screen.queryByText(/目前有進行中的活動/)).not.toBeInTheDocument();
@@ -372,7 +373,7 @@ describe("老師 Guided Notes 匯入介面", () => {
 		expect(await screen.findByRole("alert")).toBeInTheDocument();
 		expect(screen.queryByRole("link", { name: "返回進行中活動" })).not.toBeInTheDocument();
 		await user.click(screen.getByRole("button", { name: "返回匯入首頁" }));
-		expect(await screen.findByRole("button", { name: "上傳並預覽" })).toBeEnabled();
+		expect(await screen.findByRole("button", { name: "讀取分頁" })).toBeEnabled();
 		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 		expect(window.location.pathname).toBe("/");
 		expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -388,7 +389,7 @@ describe("老師 Guided Notes 匯入介面", () => {
 		const user = userEvent.setup();
 		render(<TeacherApp />);
 		await user.click(await screen.findByRole("button", { name: "返回匯入首頁" }));
-		expect(await screen.findByRole("button", { name: "上傳並預覽" })).toBeEnabled();
+		expect(await screen.findByRole("button", { name: "讀取分頁" })).toBeEnabled();
 		expect(screen.getByRole("link", { name: "返回進行中活動" })).toHaveAttribute("href", "/teacher/activities/open-1");
 		expect(window.location.pathname).toBe("/");
 		expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -674,6 +675,7 @@ describe("老師 Guided Notes 匯入介面", () => {
 			.fn()
 			.mockResolvedValueOnce(teacherSessionResponse())
 			.mockResolvedValueOnce(response(true, { activities: [] }))
+			.mockResolvedValueOnce(response(true, sheetList))
 			.mockResolvedValueOnce(response(true, preview))
 			.mockResolvedValueOnce(
 				response(true, {
@@ -713,7 +715,7 @@ describe("老師 Guided Notes 匯入介面", () => {
 		const user = userEvent.setup();
 		render(<App />);
 
-		await screen.findByRole("button", { name: "上傳並預覽" });
+		await screen.findByRole("button", { name: "讀取分頁" });
 
 		await uploadFile(user);
 		expect(await screen.findByText("共 2 題")).toBeInTheDocument();
@@ -746,7 +748,7 @@ describe("老師 Guided Notes 匯入介面", () => {
 		expect(await screen.findByText(/活動狀態：DRAFT/)).toBeInTheDocument();
 		expect(screen.getByText("本活動共 2 題。")).toBeInTheDocument();
 		expect(fetchMock).toHaveBeenNthCalledWith(
-			4,
+			5,
 			"/api/teacher/imports/draft-1/confirm",
 			expect.objectContaining({
 				method: "POST",
@@ -1760,35 +1762,37 @@ describe("老師 Guided Notes 匯入介面", () => {
 			.fn()
 			.mockResolvedValueOnce(teacherSessionResponse())
 			.mockResolvedValueOnce(response(true, { activities: [] }))
+			.mockResolvedValueOnce(response(true, sheetList))
 			.mockResolvedValueOnce(response(true, preview))
 			.mockResolvedValueOnce(response(true));
 		vi.stubGlobal("fetch", fetchMock);
 		const user = userEvent.setup();
 		render(<App />);
 
-		await screen.findByRole("button", { name: "上傳並預覽" });
+		await screen.findByRole("button", { name: "讀取分頁" });
 
 		await uploadFile(user);
 		await screen.findByText("匯入預覽");
 		await user.click(screen.getByRole("button", { name: "取消匯入" }));
 
 		expect(
-			await screen.findByRole("button", { name: "上傳並預覽" }),
+			await screen.findByRole("button", { name: "讀取分頁" }),
 		).toBeInTheDocument();
 		expect(fetchMock).toHaveBeenNthCalledWith(
-			4,
+			5,
 			"/api/teacher/imports/draft-1",
 			{ method: "DELETE", credentials: "same-origin" },
 		);
 	});
 
-	it("清楚顯示伺服器提供的檔案驗證錯誤", async () => {
+	it("清楚顯示伺服器提供的定位錯誤", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi
 				.fn()
 				.mockResolvedValueOnce(teacherSessionResponse())
 				.mockResolvedValueOnce(response(true, { activities: [] }))
+				.mockResolvedValueOnce(response(true, sheetList))
 				.mockResolvedValueOnce(
 					response(false, {
 						error: {
@@ -1801,13 +1805,13 @@ describe("老師 Guided Notes 匯入介面", () => {
 		const user = userEvent.setup();
 		render(<App />);
 
-		await screen.findByRole("button", { name: "上傳並預覽" });
+		await screen.findByRole("button", { name: "讀取分頁" });
 
 		await uploadFile(user);
 		expect(await screen.findByRole("alert")).toHaveTextContent(
 			"找不到同一列中的「題號」、「題目」與「作答」表頭。",
 		);
-		expect(screen.getByRole("button", { name: "上傳並預覽" })).toBeEnabled();
+		expect(screen.getByRole("button", { name: "讀取分頁" })).toBeEnabled();
 	});
 
 	it("先由伺服器建立老師 session，失敗時可重試且不顯示匯入操作", async () => {
@@ -1828,15 +1832,77 @@ describe("老師 Guided Notes 匯入介面", () => {
 			"老師入口不可用。",
 		);
 		expect(
-			screen.queryByRole("button", { name: "上傳並預覽" }),
+			screen.queryByRole("button", { name: "讀取分頁" }),
 		).not.toBeInTheDocument();
 		await user.click(screen.getByRole("button", { name: "重試" }));
 		expect(
-			await screen.findByRole("button", { name: "上傳並預覽" }),
+			await screen.findByRole("button", { name: "讀取分頁" }),
 		).toBeInTheDocument();
 		expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/teacher/session", {
 			method: "POST",
 			credentials: "same-origin",
 		});
 	});
+});
+
+
+describe("Google Sheets 老師匯入介面", () => {
+  it("選擇單一分頁並禁止載入期間重複讀取與確認", async () => {
+    let resolveList!: (value: Response) => void;
+    let resolveConfirm!: (value: Response) => void;
+    const listing = new Promise<Response>((resolve) => { resolveList = resolve; });
+    const confirming = new Promise<Response>((resolve) => { resolveConfirm = resolve; });
+    const fetchMock = vi.fn().mockResolvedValueOnce(teacherSessionResponse())
+      .mockResolvedValueOnce(response(true,{ activities: [] })).mockReturnValueOnce(listing)
+      .mockResolvedValueOnce(response(true,{ ...preview,sheetId: 8,sheetTitle: "第二分頁" }))
+      .mockReturnValueOnce(confirming).mockResolvedValueOnce(response(true,teacherSnapshot("DRAFT")));
+    vi.stubGlobal("fetch",fetchMock); const user = userEvent.setup();render(<TeacherApp />);
+    await screen.findByRole("button",{ name: "讀取分頁" });
+    expect(screen.queryByLabelText("Guided Notes 檔案")).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Google Sheets 網址"),"https://docs.google.com/spreadsheets/d/synthetic/edit");
+    await user.dblClick(screen.getByRole("button",{ name: "讀取分頁" }));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("button",{ name: "讀取中…" })).toBeDisabled();
+    await act(async () => resolveList(response(true,sheetList)));
+    await user.selectOptions(await screen.findByLabelText("選擇分頁"),"8");
+    await user.click(screen.getByRole("button",{ name: "預覽 Guided Notes" }));
+    await screen.findByText("共 2 題");
+    expect(fetchMock).toHaveBeenNthCalledWith(4,"/api/teacher/imports",expect.objectContaining({ body: JSON.stringify({ url: "https://docs.google.com/spreadsheets/d/synthetic/edit",sheetId: 8 }) }));
+    await user.dblClick(screen.getByRole("button",{ name: "確認並建立活動" }));
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(screen.getByRole("button",{ name: "建立中…" })).toBeDisabled();
+    await act(async () => resolveConfirm(response(true,{ activityId: "a1",title: "第二分頁",state: "DRAFT",questionCount: 2 })));
+    await screen.findByRole("heading",{ name: "設定搶答活動" });
+  });
+  it.each(["請提供有效的 Google Sheets 文件網址。","Google 權限不足。"])("讀取失敗顯示錯誤且可重試：%s", async (message) => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(teacherSessionResponse()).mockResolvedValueOnce(response(true,{ activities: [] }))
+      .mockResolvedValueOnce(response(false,{ error: { code: "GOOGLE_ERROR",message } }));
+    vi.stubGlobal("fetch",fetchMock); const user = userEvent.setup();render(<TeacherApp />);
+    await screen.findByRole("button",{ name: "讀取分頁" });
+    await user.type(screen.getByLabelText("Google Sheets 網址"),"https://evil.invalid");
+    await user.click(screen.getByRole("button",{ name: "讀取分頁" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByRole("button",{ name: "讀取分頁" })).toBeEnabled();
+    expect(screen.queryByRole("button",{ name: "確認並建立活動" })).not.toBeInTheDocument();
+  });
+  it("確認前來源變更拒絕，仍可取消而不顯示活動成功", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(teacherSessionResponse()).mockResolvedValueOnce(response(true,{ activities: [] }))
+      .mockResolvedValueOnce(response(true,sheetList)).mockResolvedValueOnce(response(true,preview))
+      .mockResolvedValueOnce(response(false,{ error: { code: "GOOGLE_SOURCE_CHANGED",message: "雲端來源已變更，請重新預覽。" } },409))
+      .mockResolvedValueOnce(response(true));
+    vi.stubGlobal("fetch",fetchMock);const user = userEvent.setup();render(<TeacherApp />);
+    await screen.findByRole("button",{ name: "讀取分頁" });await uploadFile(user);
+    await user.click(screen.getByRole("button",{ name: "確認並建立活動" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("雲端來源已變更");
+    expect(screen.queryByRole("heading",{ name: "設定搶答活動" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button",{ name: "取消匯入" }));
+    await screen.findByRole("button",{ name: "讀取分頁" });
+    expect(window.location.pathname).toBe("/");
+  });
+  it("雲端活動結果不提供 XLSX 備援下載", async () => {
+    vi.stubGlobal("fetch",vi.fn().mockResolvedValue(response(true,{ activityId: "a1",revision: 2,closedAt: "2026-11-01T00:00:00.000Z",questions: [] })));
+    render(<TeacherResultsPage activityId="a1" sourceKind="google-sheets" />);
+    await screen.findByText("唯讀結果");
+    expect(screen.queryByRole("button",{ name: "下載已回填 Guided Notes" })).not.toBeInTheDocument();
+  });
 });

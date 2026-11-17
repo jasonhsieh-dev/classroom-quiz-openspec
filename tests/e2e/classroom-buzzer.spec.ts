@@ -62,7 +62,7 @@ async function jsonFetch(page: Page, url: string, init?: RequestInit) {
 	);
 }
 
-test("同 profile 老師學生完成搶答、恢復、隱私、截止及 XLSX 匯出", async ({
+test("歷史 XLSX 活動於同 profile 完成搶答、恢復、隱私、截止及匯出", async ({
 	browser,
 }) => {
 	const teacherContext = await browser.newContext({ acceptDownloads: true });
@@ -89,29 +89,9 @@ test("同 profile 老師學生完成搶答、恢復、隱私、截止及 XLSX �
 		const sourceWorkbook = new ExcelJS.Workbook();
 		await sourceWorkbook.xlsx.readFile(fixturePath);
 		const sourceMappings = parseGuidedNotesWorkbook(sourceWorkbook);
-		await teacher.goto("/");
-		await expect(
-			teacher.getByRole("heading", { name: "匯入 Guided Notes" }),
-		).toBeVisible();
-		await teacher.getByLabel("Guided Notes 檔案").setInputFiles(fixturePath);
-		await teacher.getByRole("button", { name: "上傳並預覽" }).click();
-		await expect(teacher.getByText("匯入預覽")).toBeVisible();
-		await expect(teacher.getByText("共 6 題")).toBeVisible();
-		await expect(
-			teacher.getByText(sourceMappings[0]!.displayNumber, { exact: true }),
-		).toBeVisible();
-		await expect(
-			teacher.getByText(sourceMappings[0]!.promptText, { exact: true }),
-		).toBeVisible();
-		const confirmed = teacher.waitForResponse(
-			(response) =>
-				response.url().includes("/confirm") &&
-				response.request().method() === "POST",
-		);
-		await teacher.getByRole("button", { name: "確認並建立活動" }).click();
-		const confirmResponse = await confirmed;
-		expect(confirmResponse.ok()).toBeTruthy();
-		const activityId = (await confirmResponse.json()).activityId as string;
+		const legacy = JSON.parse(await readFile(resolve("var/e2e/legacy.json"),"utf8"));
+		const activityId = legacy.activityId as string;
+		await teacher.goto(`/teacher/activities/${activityId}`);
 		await expect(
 			teacher.getByRole("heading", { name: "設定搶答活動" }),
 		).toBeVisible();
@@ -273,7 +253,7 @@ test("同 profile 老師學生完成搶答、恢復、隱私、截止及 XLSX �
 		await homepage.goto("/");
 		await homepage.reload();
 		await expect(homepage.getByRole("heading", { name: "匯入 Guided Notes" })).toBeVisible();
-		await expect(homepage.getByRole("button", { name: "上傳並預覽" })).toBeVisible();
+		await expect(homepage.getByRole("button", { name: "讀取分頁" })).toBeVisible();
 		await expect(homepage).toHaveURL("/");
 		await expect(homepage.getByText(/目前有進行中的活動/)).toBeVisible();
 		await expect(homepage.getByRole("heading", { name: "既有活動" })).toHaveCount(0);
@@ -294,19 +274,7 @@ test("同 profile 老師學生完成搶答、恢復、隱私、截止及 XLSX �
 			]),
 		);
 
-		const secondImport = await teacherContext.request.post(
-			"/api/teacher/imports",
-			{
-				multipart: {
-					file: {
-						name: "另一活動.xlsx",
-						mimeType:
-							"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-						buffer: await readFile(fixturePath),
-					},
-				},
-			},
-		);
+		const secondImport = await teacherContext.request.post("/api/teacher/imports", { data: { url: "https://docs.google.com/spreadsheets/d/synthetic/edit",sheetId: 0 } });
 		expect(secondImport.ok()).toBeTruthy();
 		const draft = await secondImport.json();
 		const secondConfirm = await teacherContext.request.post(
@@ -464,7 +432,7 @@ test("同 profile 老師學生完成搶答、恢復、隱私、截止及 XLSX �
 		const closedHome = await teacherContext.newPage();
 		const summariesBeforeClosedHome = await (await teacherContext.request.get("/api/teacher/activities")).json();
 		await closedHome.goto("/");
-		await expect(closedHome.getByRole("button", { name: "上傳並預覽" })).toBeVisible();
+		await expect(closedHome.getByRole("button", { name: "讀取分頁" })).toBeVisible();
 		await expect(closedHome.getByRole("heading", { name: "匯入 Guided Notes" })).toBeVisible();
 		await expect(closedHome.getByRole("link", { name: "返回進行中活動" })).toHaveCount(0);
 		await expect(closedHome.getByText(/目前有進行中的活動/)).toHaveCount(0);
@@ -491,8 +459,10 @@ test("未變更答案保留原順位，真正修改依新序號排名且不同�
 	const second = await secondContext.newPage();
 	try {
 		await teacher.goto("/");
-		await teacher.getByLabel("Guided Notes 檔案").setInputFiles(fixturePath);
-		await teacher.getByRole("button", { name: "上傳並預覽" }).click();
+		await teacher.getByLabel("Google Sheets 網址").fill("https://docs.google.com/spreadsheets/d/synthetic/edit");
+		await teacher.getByRole("button", { name: "讀取分頁" }).click();
+		await teacher.getByLabel("選擇分頁").selectOption("0");
+		await teacher.getByRole("button", { name: "預覽 Guided Notes" }).click();
 		await expect(teacher.getByText("匯入預覽")).toBeVisible();
 		await teacher.getByLabel("活動名稱").fill("未變更答案回歸");
 		const confirmed = teacher.waitForResponse((response) => response.url().includes("/confirm") && response.request().method() === "POST");
@@ -551,7 +521,57 @@ test("未變更答案保留原順位，真正修改依新序號排名且不同�
 			{ group: { name: "第 2 組" }, rank: 1, answer: "第二組答案" },
 			{ group: { name: "第 1 組" }, rank: 2, answer: "第一組真正修改" },
 		]);
+		await teacher.getByRole("button",{ name: "寫回 Google Sheets",exact: true }).click();
+		await expect(teacher.getByText(/外部共編競態/)).toBeVisible();
+		await expect(teacher.getByRole("cell",{ name: "C2",exact: true })).toBeVisible();
+		await teacher.getByRole("button",{ name: "確認寫回 Google Sheets" }).click();
+		await expect(teacher.getByText("寫回成功，已讀回核對。")).toBeVisible();
+		const written = JSON.parse(await readFile(resolve("var/e2e/writebacks.json"),"utf8"));
+		expect(written.requests).toHaveLength(2);
+		expect(written.after[0].data[0].rowData[1].values[2].userEnteredValue).toEqual({ stringValue: "兩組相同文字" });
+		expect(written.after[0].data[0].rowData[2].values[2].userEnteredValue).toEqual({ stringValue: "第二組答案" });
+		const expected = structuredClone(written.before);
+		expected[0].data[0].rowData[1].values[2] = written.after[0].data[0].rowData[1].values[2];
+		expected[0].data[0].rowData[2].values[2] = written.after[0].data[0].rowData[2].values[2];
+		expect(written.after).toEqual(expected);
+		await teacher.reload();
+		await expect(teacher.getByText("寫回成功，已讀回核對。")).toBeVisible();
+		expect((await jsonFetch(teacher, `/api/teacher/activities/${activityId}/results`)).body).toEqual(results.body);
 	} finally {
 		await Promise.all([teacherContext.close(), firstContext.close(), secondContext.close()]);
 	}
+});
+
+
+test("Mock Google：老師讀取分頁、預覽、取消及確認，沒有 XLSX 新活動入口", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("button",{ name: "讀取分頁" })).toBeVisible();
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
+  const before = await page.request.get("/api/teacher/activities").then((r) => r.json());
+  await page.getByLabel("Google Sheets 網址").fill("https://example.invalid/document");
+  await page.getByRole("button",{ name: "讀取分頁" }).click();
+  await expect(page.getByRole("alert")).toContainText("有效的 Google Sheets");
+  await page.getByLabel("Google Sheets 網址").fill("https://docs.google.com/spreadsheets/d/synthetic/edit");
+  await page.getByRole("button",{ name: "讀取分頁" }).click();
+  await page.getByLabel("選擇分頁").selectOption("8");
+  await page.getByRole("button",{ name: "預覽 Guided Notes" }).click();
+  await expect(page.getByText("共 6 題")).toBeVisible();
+  await expect(page.getByText("雲端合成題目 1",{ exact: true })).toBeVisible();
+  await expect(page.getByText("來源：synthetic ／ 分頁 8")).toBeVisible();
+  await page.getByRole("button",{ name: "取消匯入" }).click();
+  await expect(page.getByRole("button",{ name: "讀取分頁" })).toBeVisible();
+  expect(await page.request.get("/api/teacher/activities").then((r) => r.json())).toEqual(before);
+  await page.getByRole("button",{ name: "讀取分頁" }).click();
+  await page.getByLabel("選擇分頁").selectOption("0");
+  await page.getByRole("button",{ name: "預覽 Guided Notes" }).click();
+  await page.getByLabel("活動名稱").fill("雲端匯入介面驗收");
+  let confirmCount = 0;
+  page.on("request",(request) => { if (request.url().endsWith("/confirm")) confirmCount++; });
+  await page.getByRole("button",{ name: "確認並建立活動" }).dblclick();
+  await expect(page.getByRole("heading",{ name: "設定搶答活動" })).toBeVisible();
+  expect(confirmCount).toBe(1);
+  const after = await page.request.get("/api/teacher/activities").then((r) => r.json());
+  expect(after.activities).toHaveLength(before.activities.length+1);
+  await page.reload();
+  await expect(page.getByRole("heading",{ name: "設定搶答活動" })).toBeVisible();
 });

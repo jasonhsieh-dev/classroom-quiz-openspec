@@ -32,6 +32,7 @@ export class SnapshotService {
         ...base,
         title: activity.title,
         role: "teacher",
+        sourceKind: activity.sourceKind,
         groups: this.groups.listByActivity(activityId).map(({ id, name }) => ({ id, name })),
         submissions: this.submissions(activityId).map((row) => ({
           questionId: row.question_id,

@@ -1,4 +1,4 @@
-import type ExcelJS from "exceljs";
+import type { GridCell, GridWorksheet, GridWorkbook } from "./grid.js";
 import { GuidedNotesError } from "./errors.js";
 
 export interface GuidedNotesQuestionMapping {
@@ -22,7 +22,7 @@ export interface GuidedNotesPreview {
 }
 
 interface HeaderCandidate {
-  worksheet: ExcelJS.Worksheet;
+  worksheet: GridWorksheet;
   headerRow: number;
   numberColumn: number;
   promptColumn: number;
@@ -41,11 +41,11 @@ function normalizedText(value: string): string {
   return value.normalize("NFKC").trim();
 }
 
-function isMergeSlave(cell: ExcelJS.Cell): boolean {
+function isMergeSlave(cell: GridCell): boolean {
   return cell.isMerged && cell.master.address !== cell.address;
 }
 
-function scanHeaderCandidates(workbook: ExcelJS.Workbook): HeaderCandidate[] {
+function scanHeaderCandidates(workbook: GridWorkbook): HeaderCandidate[] {
   const candidates: HeaderCandidate[] = [];
 
   for (const worksheet of workbook.worksheets) {
@@ -145,7 +145,7 @@ function rangesOverlap(left: CellRange, right: CellRange): boolean {
 }
 
 function mergedRangeAt(
-  worksheet: ExcelJS.Worksheet,
+  worksheet: GridWorksheet,
   row: number,
   column: number,
 ): CellRange | undefined {
@@ -162,12 +162,12 @@ function mergedRangeAt(
   return matches[0];
 }
 
-function originalAnswerText(cell: ExcelJS.Cell): string | null {
+function originalAnswerText(cell: GridCell): string | null {
   if (cell.value === null || cell.value === undefined) return null;
   return cell.text;
 }
 
-function hasCellStyle(cell: ExcelJS.Cell): boolean {
+function hasCellStyle(cell: GridCell): boolean {
   return Object.keys(cell.style).length > 0;
 }
 
@@ -197,7 +197,7 @@ function createMapping(
     candidate.answerColumn,
   );
 
-  if (!mergedAnswerRange && answerCell.value == null && !hasCellStyle(answerCell)) {
+  if (!mergedAnswerRange && answerCell.value == null && !hasCellStyle(answerCell) && !candidate.worksheet.validBlankAnswer?.(rowNumber, candidate.answerColumn)) {
     throw new GuidedNotesError(
       "INVALID_ANSWER_MAPPING",
       `題號 ${numberCell.text.trim()} 缺少可辨識的答案儲存格。`,
@@ -253,7 +253,7 @@ function createMapping(
 }
 
 export function parseGuidedNotesWorkbook(
-  workbook: ExcelJS.Workbook,
+  workbook: GridWorkbook,
 ): GuidedNotesQuestionMapping[] {
   const candidates = scanHeaderCandidates(workbook);
   if (candidates.length === 0) {

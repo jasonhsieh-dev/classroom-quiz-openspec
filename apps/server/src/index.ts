@@ -1,3 +1,5 @@
+import { GoogleSheetsWriter } from "./guided-notes/google-sheets-writer.js";
+import { GoogleSheetsWritebackService } from "./guided-notes/google-sheets-writeback-service.js";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -13,6 +15,7 @@ import {
 } from "./config/runtime-paths.js";
 import { initializeDatabase } from "./db/database.js";
 import { registerApplicationRoutes } from "./application-routes.js";
+import type { GoogleSheetsReader } from "./guided-notes/google-sheets-reader.js";
 import { GuidedNotesImportService } from "./guided-notes/import-service.js";
 import { backfillQuestionPrompts } from "./guided-notes/prompt-backfill.js";
 import { SessionService } from "./auth/session-auth.js";
@@ -22,7 +25,7 @@ import {
   type ClassroomSocketServer,
 } from "./realtime/socket-server.js";
 
-export async function startServer(environment: NodeJS.ProcessEnv = process.env) {
+export async function startServer(environment: NodeJS.ProcessEnv = process.env, googleSheetsReader?: GoogleSheetsReader, googleSheetsWriter?: GoogleSheetsWriter) {
   const runtimePaths = resolveRuntimePaths(environment);
   await ensureRuntimeDirectories(runtimePaths);
   const database = initializeDatabase(
@@ -41,8 +44,9 @@ export async function startServer(environment: NodeJS.ProcessEnv = process.env) 
   const app = createApp({
     registerRoutes(instance) {
       registerApplicationRoutes(instance, database, runtimePaths, {
-        guidedNotesImports,
         sessions,
+        ...(googleSheetsReader ? { googleSheetsReader } : {}),
+        ...(googleSheetsReader && googleSheetsWriter ? { googleSheetsWritebacks: new GoogleSheetsWritebackService(database,googleSheetsReader,googleSheetsWriter) } : {}),
         events: eventRelay,
       });
     },

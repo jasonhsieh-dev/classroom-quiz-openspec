@@ -11,8 +11,9 @@ export interface ActivityRecord {
   state: ActivityState;
   revision: number;
   nextReceiveSequence: number;
-  sourceFilePath: string;
-  sourceSha256: string;
+  sourceKind: "legacy-xlsx" | "google-sheets";
+  sourceFilePath: string | null;
+  sourceSha256: string | null;
   openedAt: string | null;
   closedAt: string | null;
   createdAt: string;
@@ -24,8 +25,9 @@ interface ActivityRow {
   state: ActivityState;
   revision: number;
   next_receive_sequence: number;
-  source_file_path: string;
-  source_sha256: string;
+  source_kind: "legacy-xlsx" | "google-sheets";
+  source_file_path: string | null;
+  source_sha256: string | null;
   opened_at: string | null;
   closed_at: string | null;
   created_at: string;
@@ -68,6 +70,7 @@ function toActivityRecord(row: ActivityRow): ActivityRecord {
     state: row.state,
     revision: row.revision,
     nextReceiveSequence: row.next_receive_sequence,
+    sourceKind: row.source_kind,
     sourceFilePath: row.source_file_path,
     sourceSha256: row.source_sha256,
     openedAt: row.opened_at,

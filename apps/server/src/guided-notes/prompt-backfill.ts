@@ -193,6 +193,7 @@ export async function backfillQuestionPrompts(
   };
 
   for (const activity of activities.list()) {
+    if (activity.sourceKind !== "legacy-xlsx" || !activity.sourceFilePath) continue;
     const records = questions.listByActivity(activity.id);
     if (records.length === 0 || records.every((question) => question.promptText && question.promptRange)) {
       report.unchangedActivityIds.push(activity.id);

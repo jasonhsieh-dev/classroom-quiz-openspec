@@ -50,6 +50,7 @@ export class GuidedNotesExportService {
     const activity = this.activities.getById(activityId);
     if (activity.state !== "CLOSED") throw new AppError(409, "ACTIVITY_NOT_CLOSED", "活動結束後才能匯出 Guided Notes。");
     const questions = this.questions.listByActivity(activityId);
+    if (activity.sourceKind !== "legacy-xlsx" || !activity.sourceFilePath || !activity.sourceSha256) throw new AppError(409, "SOURCE_TYPE_UNSUPPORTED", "雲端來源不提供 XLSX 匯出。");
     const sourceBuffer = await this.readVerifiedSource(activity.sourceFilePath, activity.sourceSha256);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(Uint8Array.from(sourceBuffer).buffer);

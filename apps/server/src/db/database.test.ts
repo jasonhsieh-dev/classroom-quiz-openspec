@@ -139,6 +139,7 @@ describe("SQLite 初始化與 migrations", () => {
       { filename: "002_import_drafts.sql" },
       { filename: "003_global_teacher_sessions.sql" },
       { filename: "004_question_prompts.sql" },
+      { filename: "005_google_sheets_sources.sql" },
     ]);
   });
 

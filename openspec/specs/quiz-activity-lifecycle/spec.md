@@ -89,7 +89,7 @@
 
 #### Scenario: 老師重新進入已結束活動
 - **WHEN** 老師直接進入或重新整理既有 CLOSED 活動的 `/teacher/activities/:activityId`
-- **THEN** 系統以權威快照恢復該活動並提供相同最終結果與 XLSX 匯出功能
+- **THEN** 系統以權威快照恢復該活動並提供相同最終結果與 來源相容的輸出功能：雲端活動提供寫回預覽與狀態，舊 XLSX 活動保留歷史輸出
 
 #### Scenario: 老師恢復草稿活動
 - **WHEN** 老師直接進入或重新整理既有 DRAFT 活動的 `/teacher/activities/:activityId`
@@ -148,3 +148,14 @@
 #### Scenario: 活動摘要讀取失敗
 - **WHEN** 首頁活動摘要請求失敗或回傳無效格式
 - **THEN** 系統顯示明確錯誤與重試入口，不將失敗視為沒有 OPEN、不顯示未確認的活動連結，也不自動導向活動
+
+### Requirement: 雲端整合不阻塞搶答核心
+活動確認建立後，系統 MUST 由已保存快照支援開始、提交、排名、Socket.IO 同步、截止及活動恢復，不依賴 Google API。寫回狀態 MUST 獨立於 DRAFT／OPEN／CLOSED；老師首頁與唯一 OPEN 規則 MUST 保持不變。
+
+#### Scenario: 活動建立後 Google 中斷
+- **WHEN** 有效活動已建立而 Google API 無法使用
+- **THEN** 系統仍可管理組別、開始、提交、拒絕相同答案、截止及恢復；僅雲端讀寫操作顯示失敗
+
+#### Scenario: 寫回失敗
+- **WHEN** CLOSED 活動無法完成 Google 寫回
+- **THEN** 活動保持 CLOSED，最終結果、順位及提交時間均不改變

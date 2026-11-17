@@ -99,6 +99,7 @@ export const StudentVisibleSubmissionSchema = z.object({
 }).strict();
 
 export const TeacherActivitySnapshotSchema = ActivitySnapshotSchema.extend({
+  sourceKind: z.enum(["legacy-xlsx", "google-sheets"]).optional(),
   title: z.string().min(1),
   role: z.literal("teacher"),
   groups: z.array(GroupSummarySchema),
@@ -198,6 +199,23 @@ export const ImportDraftPreviewSchema = z
   })
   .strict();
 export type ImportDraftPreview = z.infer<typeof ImportDraftPreviewSchema>;
+
+export const GoogleSheetsListRequestSchema = z.object({ url: z.string().min(1).max(2048) }).strict();
+export const GoogleSheetsPreviewRequestSchema = GoogleSheetsListRequestSchema.extend({ sheetId: z.number().int().nonnegative() }).strict();
+export const GoogleSheetsConfirmRequestSchema = z.object({ title: z.string().trim().min(1).max(200) }).strict();
+export const GoogleSheetsListResponseSchema = z.object({
+  spreadsheetId: z.string().regex(/^[a-zA-Z0-9_-]+$/),
+  sheets: z.array(z.object({ sheetId: z.number().int().nonnegative(), title: z.string().min(1) }).strict()).min(1),
+}).strict();
+export type GoogleSheetsListResponse = z.infer<typeof GoogleSheetsListResponseSchema>;
+export const GoogleSheetsImportPreviewSchema = z.object({
+  sourceKind: z.literal("google-sheets"),
+  importId: z.string().min(1), spreadsheetId: z.string().regex(/^[a-zA-Z0-9_-]+$/),
+  sheetId: z.number().int().nonnegative(), sheetTitle: z.string().min(1),
+  expiresAt: z.string().datetime(), questionCount: z.number().int().positive(),
+  questions: z.array(GuidedNotesPreviewQuestionSchema).min(1),
+}).strict().refine((value) => value.questionCount === value.questions.length, "題數不一致");
+export type GoogleSheetsImportPreview = z.infer<typeof GoogleSheetsImportPreviewSchema>;
 
 export const ConfirmImportResponseSchema = z
   .object({
@@ -300,3 +318,18 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   "connection.ready": (acknowledge: (result: { ready: true }) => void) => void;
 }
+
+
+export const GoogleWritebackStateSchema = z.enum(["NOT_PREPARED","NO_ANSWERS","PREPARED","IN_FLIGHT","SUCCEEDED","FAILED","UNKNOWN","CONFLICT"]);
+const GoogleEnteredValueSchema = z.object({ stringValue: z.string().optional(),numberValue: z.number().optional(),boolValue: z.boolean().optional(),formulaValue: z.string().optional() }).strict();
+export const GoogleWritebackRuntimeStatusSchema = z.object({ singleUpdateMode: z.boolean(),instanceId: z.string().uuid() }).strict();
+export const GoogleWritebackResponseSchema = z.object({
+  singleUpdateMode: z.boolean().optional(),instanceId: z.string().uuid().optional(),
+  activityId: z.string().min(1),operationId: z.string().min(1).nullable(),state: GoogleWritebackStateSchema,
+  spreadsheetId: z.string().regex(/^[a-zA-Z0-9_-]+$/),sheetId: z.number().int().nonnegative(),sheetTitle: z.string(),resultVersion: z.number().int().nonnegative(),
+  targets: z.array(z.object({ displayNumber: z.string(),anchor: z.string().regex(/^[A-Z]+[1-9][0-9]*$/),answer: z.string(),originalValue: GoogleEnteredValueSchema.nullable() }).strict()),
+  errorCode: z.string().nullable(),canRetry: z.boolean(),message: z.string(),
+}).strict();
+export type GoogleWritebackResponse = z.infer<typeof GoogleWritebackResponseSchema>;
+export const GoogleWritebackOperationRequestSchema = z.object({ operationId: z.string().min(1).max(100) }).strict();
+export const GoogleWritebackConfirmRequestSchema = GoogleWritebackOperationRequestSchema.extend({ confirmed: z.literal(true) }).strict();

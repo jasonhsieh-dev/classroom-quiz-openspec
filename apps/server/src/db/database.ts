@@ -33,6 +33,9 @@ function applyMigrations(
 
   const migrate = database.transaction((filename: string) => {
     database.exec(readFileSync(`${migrationsDirectory}/${filename}`, "utf8"));
+    if ((database.pragma("foreign_key_check") as unknown[]).length > 0) {
+      throw new Error("Migration foreign key validation failed");
+    }
     database
       .prepare(
         "INSERT INTO schema_migrations (filename, applied_at) VALUES (?, ?)",
@@ -42,7 +45,14 @@ function applyMigrations(
 
   for (const filename of migrationFiles) {
     if (!appliedSet.has(filename)) {
-      migrate(filename);
+      // Only the parent-table rebuild needs enforcement suspended; never inside a transaction.
+      const rebuildsParent = filename === "005_google_sheets_sources.sql";
+      if (rebuildsParent) database.pragma("foreign_keys = OFF");
+      try {
+        migrate(filename);
+      } finally {
+        if (rebuildsParent) database.pragma("foreign_keys = ON");
+      }
     }
   }
 }

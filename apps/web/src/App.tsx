@@ -1,3 +1,4 @@
+import { GoogleSheetsWriteback } from "./GoogleSheetsWriteback.js";
 import type {
 	ActivityState,
 	ActivitySummary,
@@ -5,7 +6,8 @@ import type {
 	ConfirmImportResponse,
 	GroupListResponse,
 	GroupSummary,
-	ImportDraftPreview,
+	GoogleSheetsImportPreview,
+	GoogleSheetsListResponse,
 	StudentActivityResults,
 	StudentSessionResponse,
 	SubmissionResponse,
@@ -14,6 +16,9 @@ import type {
 } from "@classroom-buzzer/shared";
 import {
 	ActivitySummaryListResponseSchema,
+	GoogleSheetsListResponseSchema,
+	GoogleSheetsImportPreviewSchema,
+	ConfirmImportResponseSchema,
 	CloseActivityResponseSchema,
 	StudentActivityResultsSchema,
 	TeacherActivityResultsSchema,
@@ -35,7 +40,7 @@ import {
 	useTeacherActivitySync,
 } from "./use-activity-sync.js";
 
-type RequestState = "idle" | "uploading" | "confirming" | "cancelling";
+type RequestState = "idle" | "listing" | "uploading" | "confirming" | "cancelling";
 type SessionState = "loading" | "ready" | "error";
 
 async function errorMessage(response: Response): Promise<string> {
@@ -285,13 +290,13 @@ export function TeacherGroupManager({
 				</>
 			)}
 			{activityState === "CLOSED" && (
-				<TeacherResultsPage activityId={activity.activityId} />
+				<TeacherResultsPage activityId={activity.activityId} sourceKind={"sourceKind" in activity ? activity.sourceKind ?? "legacy-xlsx" : "legacy-xlsx"} />
 			)}
 		</section>
 	);
 }
 
-export function TeacherResultsPage({ activityId }: { activityId: string }) {
+export function TeacherResultsPage({ activityId, sourceKind = "legacy-xlsx" }: { activityId: string; sourceKind?: "legacy-xlsx" | "google-sheets" }) {
 	const [results, setResults] = useState<TeacherActivityResults | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [exporting, setExporting] = useState(false);
@@ -354,13 +359,13 @@ export function TeacherResultsPage({ activityId }: { activityId: string }) {
 			<h3>唯讀結果</h3>
 			<p>活動已結束；人工檢查不會改變成功組別或順位。</p>
 			<div className="actions">
-				<button
+				{sourceKind === "legacy-xlsx" && (<button
 					type="button"
 					onClick={() => void downloadGuidedNotes()}
 					disabled={!results || exporting}
 				>
 					{exporting ? "產生匯出檔中…" : "下載已回填 Guided Notes"}
-				</button>
+				</button>)}
 			</div>
 			{error && (
 				<div className="alert error" role="alert">
@@ -368,6 +373,7 @@ export function TeacherResultsPage({ activityId }: { activityId: string }) {
 				</div>
 			)}
 			{!results && !error && <p aria-live="polite">正在載入完整結果…</p>}
+			{sourceKind === "google-sheets" && results && <GoogleSheetsWriteback activityId={activityId} />}
 			{results?.questions.map((item) => (
 				<article className="question-result" key={item.question.id}>
 					<QuestionPresentation question={item.question} />
@@ -946,9 +952,7 @@ export function StudentJoin() {
 	);
 }
 
-function suggestedTitle(filename: string): string {
-	return filename.replace(/\.xlsx$/i, "").trim();
-}
+
 
 export function App() {
 	return window.location.pathname.startsWith("/student") ? (
@@ -978,8 +982,11 @@ export function teacherPageHeading(state?: ActivityState): string {
 export function TeacherApp() {
 	const sessionRequestStarted = useRef(false);
 	const [sessionState, setSessionState] = useState<SessionState>("loading");
-	const [file, setFile] = useState<File | null>(null);
-	const [preview, setPreview] = useState<ImportDraftPreview | null>(null);
+	const [sheetsUrl, setSheetsUrl] = useState("");
+	const [sheets, setSheets] = useState<GoogleSheetsListResponse | null>(null);
+	const [sheetId, setSheetId] = useState("");
+	const importLock = useRef(false);
+	const [preview, setPreview] = useState<GoogleSheetsImportPreview | null>(null);
 	const [title, setTitle] = useState("");
 	const [requestState, setRequestState] = useState<RequestState>("idle");
 	const [error, setError] = useState<string | null>(null);
@@ -1066,39 +1073,47 @@ export function TeacherApp() {
 		void createTeacherSession();
 	}, [createTeacherSession]);
 
-	async function upload(event: FormEvent<HTMLFormElement>) {
+	async function listSheets(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		if (!file) {
-			setError("請先選擇 Guided Notes .xlsx 檔案。");
-			return;
-		}
-
-		setError(null);
-		setRequestState("uploading");
+		if (importLock.current) return;
+		importLock.current = true;
+		setError(null); setSheets(null); setSheetId(""); setRequestState("listing");
 		try {
-			const form = new FormData();
-			form.append("file", file);
-			const response = await fetch("/api/teacher/imports", {
-				method: "POST",
-				credentials: "same-origin",
-				body: form,
+			const response = await fetch("/api/teacher/imports/sheets", {
+				method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
+				body: JSON.stringify({ url: sheetsUrl.trim() }),
 			});
 			if (!response.ok) throw new Error(await errorMessage(response));
-			const result = (await response.json()) as ImportDraftPreview;
-			setPreview(result);
-			setTitle(suggestedTitle(result.filename));
-		} catch (caught) {
-			setError(
-				caught instanceof Error ? caught.message : "Guided Notes 上傳失敗。",
-			);
-		} finally {
-			setRequestState("idle");
-		}
+			const parsed = GoogleSheetsListResponseSchema.safeParse(await response.json());
+			if (!parsed.success) throw new Error("伺服器回傳的分頁清單格式無效。");
+			const result = parsed.data;
+			setSheets(result);
+			setSheetId(String(result.sheets[0]!.sheetId));
+		} catch (caught) { setError(caught instanceof Error ? caught.message : "無法讀取分頁。"); }
+		finally { importLock.current = false; setRequestState("idle"); }
+	}
+
+	async function previewSheet() {
+		if (importLock.current || !sheets || sheetId === "") return;
+		importLock.current = true; setError(null); setRequestState("uploading");
+		try {
+			const response = await fetch("/api/teacher/imports", {
+				method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
+				body: JSON.stringify({ url: sheetsUrl.trim(), sheetId: Number(sheetId) }),
+			});
+			if (!response.ok) throw new Error(await errorMessage(response));
+			const parsed = GoogleSheetsImportPreviewSchema.safeParse(await response.json());
+			if (!parsed.success) throw new Error("伺服器回傳的匯入預覽格式無效。");
+			const result = parsed.data;
+			setPreview(result); setTitle(result.sheetTitle);
+		} catch (caught) { setError(caught instanceof Error ? caught.message : "無法預覽 Guided Notes。"); }
+		finally { importLock.current = false; setRequestState("idle"); }
 	}
 
 	async function cancel() {
-		if (!preview) return;
+		if (!preview || importLock.current) return;
 		setError(null);
+		importLock.current = true;
 		setRequestState("cancelling");
 		try {
 			const response = await fetch(`/api/teacher/imports/${preview.importId}`, {
@@ -1107,22 +1122,24 @@ export function TeacherApp() {
 			});
 			if (!response.ok) throw new Error(await errorMessage(response));
 			setPreview(null);
-			setFile(null);
+			setSheets(null); setSheetId("");
 			setTitle("");
 		} catch (caught) {
 			setError(caught instanceof Error ? caught.message : "取消匯入失敗。");
 		} finally {
+			importLock.current = false;
 			setRequestState("idle");
 		}
 	}
 
 	async function confirm() {
-		if (!preview) return;
+		if (!preview || importLock.current) return;
 		if (!title.trim()) {
 			setError("活動名稱不可空白。");
 			return;
 		}
 		setError(null);
+		importLock.current = true;
 		setRequestState("confirming");
 		try {
 			const response = await fetch(
@@ -1135,12 +1152,17 @@ export function TeacherApp() {
 				},
 			);
 			if (!response.ok) throw new Error(await errorMessage(response));
-			const confirmed = (await response.json()) as ConfirmImportResponse;
-			await loadActivity(confirmed.activityId, true);
+			const parsed = ConfirmImportResponseSchema.safeParse(await response.json());
+			if (!parsed.success) throw new Error("伺服器回傳的活動建立結果格式無效。");
+			const confirmed = parsed.data;
 			setPreview(null);
+			window.history.pushState({}, "", `/teacher/activities/${encodeURIComponent(confirmed.activityId)}`);
+			try { await loadActivity(confirmed.activityId, false); }
+			catch (error) { setRecoveryError(true); throw error; }
 		} catch (caught) {
 			setError(caught instanceof Error ? caught.message : "確認匯入失敗。");
 		} finally {
+			importLock.current = false;
 			setRequestState("idle");
 		}
 	}
@@ -1153,7 +1175,7 @@ export function TeacherApp() {
 				<p>
 					{activity
 						? "活動資料來自伺服器權威快照。"
-						: "上傳 Google Sheets 下載的 .xlsx，確認預覽後才會建立活動。"}
+						: "貼上 Google Sheets 網址並選擇分頁，確認預覽後才會建立活動。"}
 				</p>
 			</header>
 
@@ -1224,9 +1246,10 @@ export function TeacherApp() {
 					<div className="preview-heading">
 						<div>
 							<p className="status-label">匯入預覽</p>
-							<h2>{preview.filename}</h2>
+							<h2>{preview.sheetTitle}</h2>
 						</div>
 						<span className="count-badge">共 {preview.questionCount} 題</span>
+						<p>來源：{preview.spreadsheetId} ／ 分頁 {preview.sheetId}</p>
 					</div>
 
 					<label className="field">
@@ -1275,7 +1298,7 @@ export function TeacherApp() {
 					</div>
 
 					<p className="preview-note">
-						請確認題號、完整題目與答案範圍正確。按下確認後才會保存原始檔並建立
+						請確認題號、完整題目與答案範圍正確。按下確認後才會保存雲端來源與題目快照並建立
 						DRAFT 活動。
 					</p>
 					<div className="actions">
@@ -1294,27 +1317,20 @@ export function TeacherApp() {
 				</section>
 			) : (
 				<>
-					<form className="card upload-panel" onSubmit={upload}>
-						<label className="file-picker">
-							<span>Guided Notes 檔案</span>
-							<input
-								aria-label="Guided Notes 檔案"
-								type="file"
-								accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-								onChange={(event) => {
-									setFile(event.target.files?.[0] ?? null);
-									setError(null);
-								}}
-								disabled={busy}
-							/>
-							<small>
-								僅接受 .xlsx；系統會依「題號」、「題目」及「作答」表頭動態辨識。
-							</small>
+					<form className="card upload-panel" onSubmit={listSheets}>
+						<label className="field">
+							<span>Google Sheets 網址</span>
+							<input aria-label="Google Sheets 網址" type="url" value={sheetsUrl} required
+								onChange={(event) => { setSheetsUrl(event.target.value); setSheets(null); setSheetId(""); setError(null); }} disabled={busy} />
+							<small>請先將文件分享給系統服務帳號；依「題號」、「題目」及「作答」表頭動態辨識。</small>
 						</label>
-						{file && <p className="selected-file">已選擇：{file.name}</p>}
-						<button type="submit" disabled={busy}>
-							{requestState === "uploading" ? "解析中…" : "上傳並預覽"}
-						</button>
+						<button type="submit" disabled={busy}>{requestState === "listing" ? "讀取中…" : "讀取分頁"}</button>
+						{sheets && <>
+							<label className="field"><span>選擇分頁</span><select aria-label="選擇分頁" value={sheetId} onChange={(event) => setSheetId(event.target.value)} disabled={busy}>
+								{sheets.sheets.map((sheet) => <option key={sheet.sheetId} value={sheet.sheetId}>{sheet.title}</option>)}
+							</select></label>
+							<button type="button" disabled={busy || sheetId === ""} onClick={() => void previewSheet()}>{requestState === "uploading" ? "解析中…" : "預覽 Guided Notes"}</button>
+						</>}
 					</form>
 					{openActivity && (
 						<section className="card">
